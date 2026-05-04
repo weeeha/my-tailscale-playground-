@@ -529,6 +529,17 @@ func tryExecLogin(dlogf logger.Logf, ia incubatorArgs) error {
 			// breaks things like mosh and VSCode.
 			return nil
 		}
+	case darwin:
+		// /usr/bin/login -pq exits 0 once it has spawned the child, so
+		// the child's exit status is lost: `ssh mac exit 42` returns 0
+		// (#18256). Skip login for non-TTY exec; fall through to
+		// handleSSHInProcess which uses cmd.Run + os.Exit and preserves
+		// the code. TTY shells keep using login for PAM "remote" session
+		// and utmpx accounting.
+		if !ia.hasTTY && !ia.isShell {
+			dlogf("skipping login on darwin: non-TTY command exec swallows child exit status")
+			return nil
+		}
 	}
 
 	loginCmdPath, err := exec.LookPath("login")
