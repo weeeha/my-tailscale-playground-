@@ -9,7 +9,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"tailscale.com/control/controlclient"
-	"tailscale.com/envknob"
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/store/mem"
 	"tailscale.com/tailcfg"
@@ -28,9 +27,6 @@ import (
 // This tests the key recovery path: client has expired key -> admin extends key
 // -> server sends updated netmap -> client should recover.
 func TestKeyExtensionWakesUpExpiredClient(t *testing.T) {
-	envknob.Setenv("TAILSCALE_USE_WIP_CODE", "1")
-	defer envknob.Setenv("TAILSCALE_USE_WIP_CODE", "")
-
 	c := qt.New(t)
 	logf := tstest.WhileTestRunningLogger(t)
 
@@ -158,9 +154,6 @@ func TestKeyExtensionWakesUpExpiredClient(t *testing.T) {
 // TestKeyExpiredStateMachine verifies that when a key expires, the state machine
 // correctly transitions to NeedsLogin and sets keyExpired=true.
 func TestKeyExpiredStateMachine(t *testing.T) {
-	envknob.Setenv("TAILSCALE_USE_WIP_CODE", "1")
-	defer envknob.Setenv("TAILSCALE_USE_WIP_CODE", "")
-
 	c := qt.New(t)
 	logf := tstest.WhileTestRunningLogger(t)
 
@@ -238,9 +231,6 @@ func TestKeyExpiredStateMachine(t *testing.T) {
 // TestKeyExpiryExtendedUnblocksEngine verifies that when a key is extended,
 // the engine is unblocked even if it was blocked due to key expiry.
 func TestKeyExpiryExtendedUnblocksEngine(t *testing.T) {
-	envknob.Setenv("TAILSCALE_USE_WIP_CODE", "1")
-	defer envknob.Setenv("TAILSCALE_USE_WIP_CODE", "")
-
 	c := qt.New(t)
 	logf := tstest.WhileTestRunningLogger(t)
 
@@ -324,9 +314,6 @@ func TestKeyExpiryExtendedUnblocksEngine(t *testing.T) {
 // TestKeyExpiryZeroMeansNoExpiry verifies that a zero KeyExpiry (used for
 // tagged nodes or nodes with expiry disabled) is not treated as expired.
 func TestKeyExpiryZeroMeansNoExpiry(t *testing.T) {
-	envknob.Setenv("TAILSCALE_USE_WIP_CODE", "1")
-	defer envknob.Setenv("TAILSCALE_USE_WIP_CODE", "")
-
 	c := qt.New(t)
 	logf := tstest.WhileTestRunningLogger(t)
 
@@ -379,9 +366,6 @@ func TestKeyExpiryZeroMeansNoExpiry(t *testing.T) {
 // TestKeyExpiryWithNetMapUpdate verifies that key expiry detection works
 // correctly across multiple netmap updates with varying expiry times.
 func TestKeyExpiryWithNetMapUpdate(t *testing.T) {
-	envknob.Setenv("TAILSCALE_USE_WIP_CODE", "1")
-	defer envknob.Setenv("TAILSCALE_USE_WIP_CODE", "")
-
 	c := qt.New(t)
 	logf := tstest.WhileTestRunningLogger(t)
 
