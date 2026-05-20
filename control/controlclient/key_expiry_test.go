@@ -55,11 +55,11 @@ func TestLoginPreservesMapPollWhenLoggedIn(t *testing.T) {
 // TestLoginPreservesMapPollWithNodeKey tests the tsnet restart scenario.
 //
 // When a tsnet server restarts with an expired key:
-// 1. The server has a valid node key stored in persist
-// 2. Control returns an AuthURL (for interactive login)
-// 3. loggedIn is false (because TryLogin returned a URL, not success)
-// 4. But we should NOT cancel the map poll, because the server might send
-//    a key extension notification via the existing node key
+//  1. The server has a valid node key stored in persist
+//  2. Control returns an AuthURL (for interactive login)
+//  3. loggedIn is false (because TryLogin returned a URL, not success)
+//  4. But we should NOT cancel the map poll, because the server might send
+//     a key extension notification via the existing node key
 //
 // This test verifies that Login() preserves the map poll when we have a
 // valid node key, even if loggedIn=false.
