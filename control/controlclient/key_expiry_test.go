@@ -26,7 +26,9 @@ func TestLoginPreservesMapPollWhenLoggedIn(t *testing.T) {
 		closed:   false,
 	}
 	auto.mapCtx, auto.mapCancel = context.WithCancel(context.Background())
+	t.Cleanup(auto.mapCancel)
 	auto.authCtx, auto.authCancel = context.WithCancel(context.Background())
+	t.Cleanup(auto.authCancel)
 
 	originalMapCtx := auto.mapCtx
 
@@ -86,7 +88,9 @@ func TestLoginPreservesMapPollWithNodeKey(t *testing.T) {
 		direct:   direct,
 	}
 	auto.mapCtx, auto.mapCancel = context.WithCancel(context.Background())
+	t.Cleanup(auto.mapCancel)
 	auto.authCtx, auto.authCancel = context.WithCancel(context.Background())
+	t.Cleanup(auto.authCancel)
 
 	originalMapCtx := auto.mapCtx
 
@@ -129,7 +133,9 @@ func TestLoginCancelsMapPollWhenNoNodeKey(t *testing.T) {
 		direct:   direct,
 	}
 	auto.mapCtx, auto.mapCancel = context.WithCancel(context.Background())
+	t.Cleanup(auto.mapCancel)
 	auto.authCtx, auto.authCancel = context.WithCancel(context.Background())
+	t.Cleanup(auto.authCancel)
 
 	originalMapCtx := auto.mapCtx
 
