@@ -10,6 +10,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/netip"
+	"strconv"
+	"strings"
 
 	"tailscale.com/tailcfg"
 )
@@ -51,6 +54,29 @@ func CapVerFromFileName(name string) (tailcfg.CapabilityVersion, error) {
 	var cap tailcfg.CapabilityVersion
 	_, err := fmt.Sscanf(name, "cap-%d.hujson", &cap)
 	return cap, err
+}
+
+// TODO(beckypauley): This duplicates ResolveViaDomain logic elsewhere and should be refactored.
+func IsViaDomain(fqdn string) bool {
+	fqdn = strings.TrimSuffix(fqdn, ".")
+	if !strings.Contains(fqdn, "-via-") {
+		return false
+	}
+	firstLabel, domain, _ := strings.Cut(fqdn, ".")
+	if domain != "" && !strings.HasSuffix(domain, "ts.net") && !strings.HasSuffix(domain, "tailscale.net") {
+		return false
+	}
+	v4hyphens, siteIDStr, ok := strings.Cut(firstLabel, "-via-")
+	if !ok {
+		return false
+	}
+	ip4Str := strings.ReplaceAll(v4hyphens, "-", ".")
+	ip4, err := netip.ParseAddr(ip4Str)
+	if err != nil || !ip4.Is4() {
+		return false
+	}
+	_, err = strconv.ParseUint(siteIDStr, 0, 32)
+	return err == nil
 }
 
 // TruncateLabelValue truncates a Kubernetes label value to fit within the

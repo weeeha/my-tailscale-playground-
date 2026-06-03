@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/netip"
 	"os"
 	"path"
 	"slices"
@@ -37,6 +38,7 @@ import (
 	"tailscale.com/k8s-operator/tsclient"
 	"tailscale.com/kube/kubetypes"
 	"tailscale.com/net/netutil"
+	"tailscale.com/net/tsaddr"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/opt"
 	"tailscale.com/util/mak"
@@ -372,6 +374,20 @@ func (r *tailscaleSTSReconciler) reconcileHeadlessService(ctx context.Context, l
 			},
 			IPFamilyPolicy: new(corev1.IPFamilyPolicyPreferDualStack),
 		},
+	}
+	// 4via6 targets resolve only to an IPv6 synthetic address.
+	// For these targets, we create an IPv6-only Service.
+	// This prevents clients from using an IPv4 path that cannot
+	// be forwarded.
+	isVia := tsoperator.IsViaDomain(sts.TailnetTargetFQDN)
+	if !isVia && sts.TailnetTargetIP != "" {
+		if addr, err := netip.ParseAddr(sts.TailnetTargetIP); err == nil {
+			isVia = tsaddr.TailscaleViaRange().Contains(addr)
+		}
+	}
+	if isVia {
+		hsvc.Spec.IPFamilyPolicy = new(corev1.IPFamilyPolicySingleStack)
+		hsvc.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv6Protocol}
 	}
 	logger.Debugf("reconciling headless service for StatefulSet")
 	return createOrUpdate(ctx, r.Client, r.operatorNamespace, hsvc, func(svc *corev1.Service) { svc.Spec = hsvc.Spec })
