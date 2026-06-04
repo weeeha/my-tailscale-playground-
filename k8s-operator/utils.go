@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"tailscale.com/tailcfg"
+	"tailscale.com/util/dnsname"
 )
 
 const (
@@ -63,7 +64,7 @@ func IsViaDomain(fqdn string) bool {
 		return false
 	}
 	firstLabel, domain, _ := strings.Cut(fqdn, ".")
-	if domain != "" && !strings.HasSuffix(domain, "ts.net") && !strings.HasSuffix(domain, "tailscale.net") {
+	if domain != "" && !dnsname.HasSuffix(domain, "ts.net") && !dnsname.HasSuffix(domain, "tailscale.net") {
 		return false
 	}
 	v4hyphens, siteIDStr, ok := strings.Cut(firstLabel, "-via-")

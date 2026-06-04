@@ -379,18 +379,25 @@ func (r *tailscaleSTSReconciler) reconcileHeadlessService(ctx context.Context, l
 	// For these targets, we create an IPv6-only Service.
 	// This prevents clients from using an IPv4 path that cannot
 	// be forwarded.
-	isVia := tsoperator.IsViaDomain(sts.TailnetTargetFQDN)
-	if !isVia && sts.TailnetTargetIP != "" {
-		if addr, err := netip.ParseAddr(sts.TailnetTargetIP); err == nil {
-			isVia = tsaddr.TailscaleViaRange().Contains(addr)
-		}
-	}
-	if isVia {
+	if isViaTarget(sts.TailnetTargetFQDN, sts.TailnetTargetIP) {
 		hsvc.Spec.IPFamilyPolicy = new(corev1.IPFamilyPolicySingleStack)
 		hsvc.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv6Protocol}
 	}
 	logger.Debugf("reconciling headless service for StatefulSet")
 	return createOrUpdate(ctx, r.Client, r.operatorNamespace, hsvc, func(svc *corev1.Service) { svc.Spec = hsvc.Spec })
+}
+
+// isViaTarget reports whether the egress target (FQDN or IP) is a 4via6 address.
+func isViaTarget(fqdn, ip string) bool {
+	if tsoperator.IsViaDomain(fqdn) {
+		return true
+	}
+	if ip != "" {
+		if addr, err := netip.ParseAddr(ip); err == nil {
+			return tsaddr.TailscaleViaRange().Contains(addr)
+		}
+	}
+	return false
 }
 
 func (r *tailscaleSTSReconciler) provisionSecrets(ctx context.Context, tsClient tsclient.Client, stsC *tailscaleSTSConfig, hsvc *corev1.Service, logger *zap.SugaredLogger) ([]string, error) {
