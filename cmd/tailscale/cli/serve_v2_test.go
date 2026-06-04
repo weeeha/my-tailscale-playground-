@@ -21,6 +21,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"tailscale.com/ipn"
+	"tailscale.com/ipn/conffile"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/views"
@@ -2360,4 +2361,62 @@ func exactErrMsg(want error) func(error) string {
 func ptrToReadOnlySlice[T any](s []T) *views.Slice[T] {
 	vs := views.SliceOf(s)
 	return &vs
+}
+
+// TestServeSetConfigV0DeprecationWarning checks that set-config accepts the
+// deprecated "0.0.1" format but warns once on stderr (never stdout).
+func TestServeSetConfigV0DeprecationWarning(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		service tailcfg.ServiceName
+		all     bool
+	}{
+		{
+			name: "all_services",
+			body: `{"version":"0.0.1","services":{"svc:web":{"endpoints":{"tcp:443":"tcp://localhost:8000"}}}}`,
+			all:  true,
+		},
+		{
+			name:    "single_service",
+			body:    `{"version":"0.0.1","endpoints":{"tcp:443":"tcp://localhost:8000"}}`,
+			service: tailcfg.ServiceName("svc:web"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgPath := filepath.Join(t.TempDir(), "serve.json")
+			if err := os.WriteFile(cfgPath, []byte(tt.body), 0600); err != nil {
+				t.Fatal(err)
+			}
+
+			var stdout, stderr bytes.Buffer
+			e := &serveEnv{
+				lc:          &fakeLocalServeClient{config: &ipn.ServeConfig{}},
+				service:     tt.service,
+				allServices: tt.all,
+				testStdout:  &stdout,
+				testStderr:  &stderr,
+			}
+
+			if err := e.runServeSetConfig(context.Background(), []string{cfgPath}); err != nil {
+				t.Fatalf("runServeSetConfig: %v", err)
+			}
+
+			gotErr := stderr.String()
+			if !strings.Contains(gotErr, "v0-WARN") {
+				t.Errorf("stderr missing v0-WARN deprecation warning; got:\n%s", gotErr)
+			}
+			if n := strings.Count(gotErr, "v0-WARN"); n != 1 {
+				t.Errorf("got %d v0-WARN lines, want exactly 1; stderr:\n%s", n, gotErr)
+			}
+			if !strings.Contains(gotErr, conffile.ServicesConfigDocsURL) {
+				t.Errorf("stderr missing docs URL %q; got:\n%s", conffile.ServicesConfigDocsURL, gotErr)
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("stdout must stay clean for piping, got:\n%s", stdout.String())
+			}
+		})
+	}
 }

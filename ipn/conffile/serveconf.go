@@ -20,6 +20,14 @@ import (
 	"tailscale.com/util/mak"
 )
 
+const (
+	// DeprecatedServicesConfigVersion is the accepted-but-deprecated config format version.
+	DeprecatedServicesConfigVersion = "0.0.1"
+
+	// ServicesConfigDocsURL documents the current declarative config format.
+	ServicesConfigDocsURL = "https://tailscale.com/kb/1654/tailscaled-config-file"
+)
+
 // ServicesConfigFile is the config file format for services configuration.
 type ServicesConfigFile struct {
 	// Version is always "0.0.1" and always present.
@@ -168,8 +176,13 @@ func LoadServicesConfig(filename string, forService string) (*ServicesConfigFile
 	switch ver.Version {
 	case "":
 		return nil, errors.New("config file must have \"version\" field")
-	case "0.0.1":
-		return loadConfigV0(json, forService)
+	case DeprecatedServicesConfigVersion:
+		scf, err := loadConfigV0(json, forService)
+		if err != nil {
+			return nil, err
+		}
+		scf.Version = ver.Version // also set in single-service mode
+		return scf, nil
 	}
 	return nil, fmt.Errorf("unsupported config file version %q", ver.Version)
 }

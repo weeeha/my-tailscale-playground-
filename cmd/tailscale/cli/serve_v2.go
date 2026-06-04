@@ -820,6 +820,14 @@ func (e *serveEnv) runServeSetConfig(ctx context.Context, args []string) (err er
 		return fmt.Errorf("could not read config from file %q: %w", args[0], err)
 	}
 
+	if scf.Version == conffile.DeprecatedServicesConfigVersion {
+		fmt.Fprintf(e.stderr(),
+			"v0-WARN: The configuration format version %q is deprecated and will be removed in a future release.\n"+
+				"Please migrate your file to the updated declarative format. For step-by-step guidance, visit:\n"+
+				"%s\n",
+			conffile.DeprecatedServicesConfigVersion, conffile.ServicesConfigDocsURL)
+	}
+
 	st, err := e.getLocalClientStatusWithoutPeers(ctx)
 	if err != nil {
 		return fmt.Errorf("getting client status: %w", err)
