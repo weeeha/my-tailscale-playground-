@@ -26,6 +26,11 @@ func (b *LocalBackend) tkaSyncIfNeeded(nm *netmap.NetworkMap, prefs ipn.PrefsVie
 
 func (b *LocalBackend) tkaFilterNetmapLocked(nm *netmap.NetworkMap) {}
 
-func (b *LocalBackend) NetworkLockStatus() *ipnstate.NetworkLockStatus {
-	return &ipnstate.NetworkLockStatus{Enabled: false}
+func (b *LocalBackend) TailnetLockStatus() *ipnstate.TailnetLockStatus {
+	return &ipnstate.TailnetLockStatus{Enabled: false}
+}
+
+// NetworkLockStatus is a deprecated alias for [LocalBackend.TailnetLockStatus].
+func (b *LocalBackend) NetworkLockStatus() *ipnstate.TailnetLockStatus {
+	return b.TailnetLockStatus()
 }
