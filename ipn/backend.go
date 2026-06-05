@@ -156,6 +156,13 @@ const (
 	// promotes any patch into a full-Node entry in [Notify.PeersChanged]
 	// for this session, at the cost of bandwidth.
 	NotifyPeerPatches NotifyWatchOpt = 1 << 15
+
+	// NotifyPeerWireGuardState, if set, opts the watcher into
+	// WireGuard session state notifications via [Notify.PeerState].
+	// The first Notify sent to the watcher includes a dump of current
+	// non-zero peer states, and subsequent Notifies include per-peer
+	// state changes.
+	NotifyPeerWireGuardState NotifyWatchOpt = 1 << 16
 )
 
 // Notify is a communication from a backend (e.g. tailscaled) to a frontend
@@ -281,6 +288,10 @@ type Notify struct {
 	// the per-field accessors to read them.
 	UserProfiles map[tailcfg.UserID]tailcfg.UserProfileView `json:",omitzero"`
 
+	// PeerState, if non-empty, carries WireGuard session states keyed by stable
+	// node ID. Watchers must opt in via [NotifyPeerWireGuardState].
+	PeerState map[tailcfg.StableNodeID]PeerWireGuardState `json:",omitzero"`
+
 	Engine      *EngineStatus // if non-nil, the new or current wireguard stats
 	BrowseToURL *string       // if non-nil, UI should open a browser right now
 
@@ -335,6 +346,16 @@ type Notify struct {
 	// type is mirrored in xcode/IPN/Core/LocalAPI/Model/LocalAPIModel.swift
 }
 
+// PeerWireGuardState is the WireGuard session state for a peer.
+type PeerWireGuardState uint8
+
+const (
+	PeerWireGuardStateNone        PeerWireGuardState = 0
+	PeerWireGuardStateHandshake   PeerWireGuardState = 1
+	PeerWireGuardStateEstablished PeerWireGuardState = 2
+	PeerWireGuardStateExpired     PeerWireGuardState = 3
+)
+
 func (n Notify) String() string {
 	var sb strings.Builder
 	sb.WriteString("Notify{")
@@ -355,6 +376,9 @@ func (n Notify) String() string {
 	}
 	if n.PeerChangedPatch != nil {
 		fmt.Fprintf(&sb, "PeerChangedPatch(%d) ", len(n.PeerChangedPatch))
+	}
+	if len(n.PeerState) > 0 {
+		fmt.Fprintf(&sb, "PeerState(%d) ", len(n.PeerState))
 	}
 	if n.Engine != nil {
 		fmt.Fprintf(&sb, "wg=%v ", *n.Engine)
