@@ -83,3 +83,16 @@ async def test_default_selection_is_first_online_peer(status_with_peers: Status)
         assert mode._selected_id == "p1"
         # Detail pane was updated for the selected peer (we trust the wiring; the
         # DetailPane's own tests cover its rendering).
+
+
+async def test_tab_cycles_into_the_base() -> None:
+    from tailtop.app import TailtopApp
+    app = TailtopApp(auto_poll=False)
+    async with app.run_test() as pilot:
+        seen = []
+        for _ in range(5):
+            seen.append(app.active_mode)
+            if app.active_mode == "the_base":
+                break
+            await pilot.press("tab")
+        assert "the_base" in seen
