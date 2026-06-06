@@ -30,6 +30,7 @@ from tailtop.data.client import (
 )
 from tailtop.data.models import Peer, Status
 from tailtop.data.poller import Poller
+from tailtop.modes.base import ModeView
 from tailtop.modes.cockpit import CockpitMode
 from tailtop.modes.comfort import ComfortMode
 from tailtop.modes.observatory import ObservatoryMode
@@ -71,11 +72,18 @@ class TailtopApp(App):
     error: reactive[str] = reactive("")
     selected_peer_id: reactive[str] = reactive("")
 
-    def __init__(self, client: TailscaleClient | None = None, auto_poll: bool = True) -> None:
+    def __init__(
+        self,
+        client: TailscaleClient | None = None,
+        auto_poll: bool = True,
+        enable_boot: bool | None = None,
+    ) -> None:
         super().__init__()
         self.client = client or TailscaleClient()
         self.rates = RateHistory()
         self.auto_poll = auto_poll
+        # Boot animation defaults on for normal runs, off when auto_poll is off (tests).
+        self.enable_boot = auto_poll if enable_boot is None else enable_boot
         self.poller = Poller(self.client, self._on_status, self._on_error, interval=2.0)
 
     def compose(self) -> ComposeResult:
@@ -96,6 +104,15 @@ class TailtopApp(App):
             )
         if self.auto_poll:
             self.poller.start()
+        if self.enable_boot:
+            from tailtop.widgets.boot_overlay import BootOverlay
+            self.push_screen(BootOverlay())
+            # Boot handles Comfort's first-visit visual.
+            self._mode_widget().mark_first_visit_done()
+        else:
+            # No animations at all when boot is off (test environments).
+            for mode_id in self.MODE_ORDER:
+                self.query_one(f"#{mode_id}", ModeView).mark_first_visit_done()
 
     # ---- data plumbing -----------------------------------------------------
 
@@ -155,6 +172,9 @@ class TailtopApp(App):
         self.poller.set_interval(getattr(mode, "cadence", 2.0))
         if self.status is not None:
             mode.update_data(self.status, self.rates)
+        if not mode.first_visit_done:
+            mode.mark_first_visit_done()
+            mode.on_first_visit()
         self._refresh_status_bar()
 
     def action_refresh(self) -> None:

@@ -10,11 +10,29 @@ the Tailscale side, needs no root, and runs entirely in your terminal.
 
 `Tab` cycles between three modes, each tuned to one intent:
 
-| Mode | Intent | View | Theme |
-|------|--------|------|-------|
-| **Comfort** | manage | List (GUI parity) | Studio |
-| **Cockpit** | operate | Live cards + sparklines | Mission Control |
-| **Observatory** | observe | Network topology | Brutalist |
+| Mode | Intent | View | Theme | First-mount |
+|------|--------|------|-------|-------------|
+| **Comfort** | manage | List (GUI parity) | Studio | covered by boot |
+| **Cockpit** | operate | Live cards + sparklines | Mission Control | beams curtain rise |
+| **Observatory** | observe | Network topology | Brutalist | beams curtain rise |
+
+## Animations
+
+`tailtop` uses [terminaltexteffects](https://github.com/ChrisBuilds/terminaltexteffects)
+for a few signature moments. Any keypress skips an animation in progress.
+
+- **Boot:** beams assemble the title, print streams the connection status.
+- **Mode mount:** first time you `Tab` into Cockpit or Observatory per session,
+  beams play briefly over the mode's content.
+- **Errors:** when a peer transitions to offline in Cockpit, its card burns
+  in the theme's error color before settling on the offline state.
+
+Sweep, Thunderstorm, and a lolcat-style rainbow gradient ship as an
+unplaced library in `tailtop.widgets.effect_library` — wire them in when
+a moment calls for them. See
+[the animations design spec](../docs/superpowers/specs/2026-06-06-tailtop-animations.md)
+and [implementation plan](../docs/superpowers/specs/2026-06-06-tailtop-animations-plan.md)
+for the full picture.
 
 ## Keys
 
