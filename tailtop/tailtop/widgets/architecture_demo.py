@@ -1,21 +1,51 @@
-"""Architecture demo widget — static diagram of Tailscale control plane.
+"""Architecture demo widget — animated diagram of Tailscale control plane.
 
-Shows three sites (Main Office, Remote User, Branch Office) each containing
-Tailscale Clients, all connecting to a central Coordination Server, which
-talks to an Auth Server, which auths against Active Directory.
-
-Not data-driven; not animated. An educational static visualization.
+Shows three sites (Main Office / Remote User / Branch Office) each containing
+Tailscale Clients rendered as device cards, all connecting to a central
+Coordination Server via animated chevron-stripe belts.  The Coordination
+Server talks to an Auth Server; the Auth Server auths against Active Directory
+via a static curved arrow.
 
 Run standalone with: ``python -m tailtop.widgets.architecture_demo``
 """
 
 from __future__ import annotations
 
+import time
+from dataclasses import dataclass
+
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.widget import Widget
 
-from tailtop.widgets.belt import CharCanvas
+from tailtop.data.models import ConnType
+from tailtop.widgets.belt import (
+    BeltRenderer,
+    BeltState,
+    CharCanvas,
+    LaneState,
+    TIER_STYLE,
+    TreadAnimator,
+)
+
+
+# ---- Demo data ----
+
+@dataclass
+class DemoPeer:
+    host_name: str
+    rx_bps: float
+    tx_bps: float
+    site: str  # "main", "remote", "branch"
+
+
+DEMO_PEERS: list[DemoPeer] = [
+    DemoPeer("prod-server",   rx_bps=8_500_000,  tx_bps=210_000,    site="main"),
+    DemoPeer("dev-laptop",    rx_bps=42_000,     tx_bps=180_000,    site="main"),
+    DemoPeer("alice-mbp",     rx_bps=1_500_000,  tx_bps=320_000,    site="remote"),
+    DemoPeer("warehouse-pi",  rx_bps=0,          tx_bps=0,          site="branch"),
+    DemoPeer("branch-nas",    rx_bps=4_500_000,  tx_bps=12_000_000, site="branch"),
+]
 
 
 # ---- Style constants ----
@@ -37,14 +67,16 @@ SITE_INNER_WIDTH = 24  # width of inner entry boxes
 
 # Vertical positions of the three site boxes (top row of each)
 MAIN_OFFICE_TOP = 1
-MAIN_OFFICE_H = 12    # tall: AD box + 2 client boxes + label + padding
-REMOTE_USER_TOP = 15
-REMOTE_USER_H = 6
-BRANCH_OFFICE_TOP = 22
-BRANCH_OFFICE_H = 9   # 2 client boxes
+MAIN_OFFICE_H = 14    # AD box (h=3) + 2 client boxes (h=4 each) + label + padding
+REMOTE_USER_TOP = 17
+REMOTE_USER_H = 7
+BRANCH_OFFICE_TOP = 25
+BRANCH_OFFICE_H = 11  # 2 client boxes (h=4 each) + label + padding
 
-# Inner entry box dimensions
-INNER_BOX_H = 3       # ┌─┐ + content + └─┘
+# Inner AD entry box dimensions (3 rows tall: border + content + border)
+INNER_BOX_H = 3
+# Inner client card dimensions (4 rows tall: border + hostname + rate + border)
+CLIENT_CARD_H = 4
 INNER_BOX_LEFT_OFFSET = 2   # offset from site box left border
 INNER_BOX_WIDTH = 24  # width including borders
 
@@ -52,7 +84,7 @@ INNER_BOX_WIDTH = 24  # width including borders
 COORD_LEFT = 40
 COORD_TOP = 7
 COORD_WIDTH = 26
-COORD_HEIGHT = 12
+COORD_HEIGHT = 14
 
 # Auth server box (right)
 AUTH_LEFT = 80
@@ -65,7 +97,10 @@ ARROW_MERGE_X = 39
 
 # Canvas dimensions
 CANVAS_W = 110
-CANVAS_H = 35
+CANVAS_H = 38
+
+# Animation interval (10 Hz)
+_ANIMATION_INTERVAL = 1 / 10
 
 
 def _draw_rounded_box(
@@ -79,16 +114,13 @@ def _draw_rounded_box(
     """Draw a box with rounded corners (╭╮╰╯) and single lines."""
     right = left + width - 1
     bot = top + height - 1
-    # Corners
     c.set(left, top, "╭", style)
     c.set(right, top, "╮", style)
     c.set(left, bot, "╰", style)
     c.set(right, bot, "╯", style)
-    # Top and bottom edges
     for x in range(left + 1, right):
         c.set(x, top, "─", style)
         c.set(x, bot, "─", style)
-    # Left and right edges
     for y in range(top + 1, bot):
         c.set(left, y, "│", style)
         c.set(right, y, "│", style)
@@ -131,7 +163,7 @@ def _center_text(
 
 
 class ArchitectureDemo(Widget):
-    """Static Tailscale architecture diagram."""
+    """Animated Tailscale architecture diagram."""
 
     DEFAULT_CSS = """
     ArchitectureDemo {
@@ -145,6 +177,47 @@ class ArchitectureDemo(Widget):
     CANVAS_W = CANVAS_W
     CANVAS_H = CANVAS_H
 
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._renderer = BeltRenderer()
+        self._last_tick: float | None = None
+
+        # Per-peer belt states keyed by hostname
+        self._belt_states: dict[str, BeltState] = {
+            p.host_name: BeltState(
+                peer_id=p.host_name,
+                conn_type=ConnType.DIRECT,
+                in_lane=LaneState(cells_per_second=TreadAnimator.speed_for(p.rx_bps)),
+                out_lane=LaneState(cells_per_second=TreadAnimator.speed_for(p.tx_bps)),
+                in_tier=TreadAnimator.tier_for(p.rx_bps),
+                out_tier=TreadAnimator.tier_for(p.tx_bps),
+                rx_bps=p.rx_bps,
+                tx_bps=p.tx_bps,
+            )
+            for p in DEMO_PEERS
+        }
+
+        # Coord→auth belt: aggregate tx as proxy for auth chatter
+        sum_tx = sum(p.tx_bps for p in DEMO_PEERS)
+        self._coord_to_auth_state = LaneState(
+            cells_per_second=TreadAnimator.speed_for(sum_tx)
+        )
+        self._coord_to_auth_tier = TreadAnimator.tier_for(sum_tx)
+
+    def on_mount(self) -> None:
+        self._last_tick = None
+        self._anim_timer = self.set_interval(_ANIMATION_INTERVAL, self._on_tick)
+
+    def _on_tick(self) -> None:
+        now = time.monotonic()
+        dt = (now - self._last_tick) if self._last_tick is not None else _ANIMATION_INTERVAL
+        self._last_tick = now
+        for state in self._belt_states.values():
+            state.in_lane.advance(dt=dt)
+            state.out_lane.advance(dt=dt)
+        self._coord_to_auth_state.advance(dt=dt)
+        self.refresh()
+
     def render(self) -> Text:
         c = CharCanvas(width=self.CANVAS_W, height=self.CANVAS_H)
         self._draw_main_office(c)
@@ -157,39 +230,65 @@ class ArchitectureDemo(Widget):
         return c.to_text()
 
     # ------------------------------------------------------------------
-    # Site boxes
+    # Inner box / card helpers
     # ------------------------------------------------------------------
 
-    def _draw_inner_entry(
-        self,
-        c: CharCanvas,
-        box_top: int,
-        label: str,
-        has_bullet: bool = False,
-    ) -> int:
-        """Draw a single inner entry box. Returns the row of the right-edge bullet."""
+    def _draw_inner_ad_entry(self, c: CharCanvas, box_top: int) -> None:
+        """Draw a 3-row AD entry box (no rate, no bullet — just the label)."""
         il = SITE_LEFT + INNER_BOX_LEFT_OFFSET
         iw = INNER_BOX_WIDTH
         _draw_square_box(c, il, box_top, iw, INNER_BOX_H, INNER_BORDER_STYLE)
-        # Label text inside (leave 2 chars on each side for border + space)
         text_x = il + 2
         max_text = iw - 4
-        c.write(text_x, box_top + 1, label[:max_text], COORD_FILL_STYLE)
-        bullet_y = box_top + 1
-        if has_bullet:
-            # Place bullet just inside the right border
-            c.set(il + iw - 2, bullet_y, "●", BULLET_STYLE)
-        return bullet_y
+        c.write(text_x, box_top + 1, "Active Directory"[:max_text], COORD_FILL_STYLE)
+
+    def _draw_client_card(self, c: CharCanvas, box_top: int, peer: DemoPeer) -> None:
+        """Draw a 4-row device card with hostname, rate row, and tier bullet."""
+        il = SITE_LEFT + INNER_BOX_LEFT_OFFSET
+        iw = INNER_BOX_WIDTH
+        state = self._belt_states.get(peer.host_name)
+
+        # Border style based on in_tier
+        in_tier = state.in_tier if state else "idle"
+        border_style = TIER_STYLE.get(in_tier, INNER_BORDER_STYLE)
+
+        _draw_square_box(c, il, box_top, iw, CLIENT_CARD_H, border_style)
+
+        text_x = il + 2
+        max_text = iw - 5  # leave room for bullet (2 chars) + border
+
+        # Line 1: hostname
+        hostname = peer.host_name[:max_text]
+        c.write(text_x, box_top + 1, hostname, COORD_FILL_STYLE)
+
+        # Line 2: compact rate
+        if state:
+            rate_str = (
+                f"↑{self._renderer._compact_rate(state.tx_bps)} "
+                f"↓{self._renderer._compact_rate(state.rx_bps)}"
+            )[:max_text]
+        else:
+            rate_str = "↑0 ↓0"
+        c.write(text_x, box_top + 2, rate_str, "dim")
+
+        # Bullet colored by tier (uses in_tier)
+        bullet_style = TIER_STYLE.get(in_tier, BULLET_STYLE)
+        c.set(il + iw - 2, box_top + 1, "●", bullet_style)
+
+    # ------------------------------------------------------------------
+    # Site boxes
+    # ------------------------------------------------------------------
 
     def _draw_main_office(self, c: CharCanvas) -> None:
         top = MAIN_OFFICE_TOP
         h = MAIN_OFFICE_H
         _draw_rounded_box(c, SITE_LEFT, top, SITE_WIDTH, h, SITE_BORDER_STYLE)
-        # Active Directory (no bullet)
-        self._draw_inner_entry(c, top + 1, "Active Directory", has_bullet=False)
-        # Two Tailscale Clients
-        self._draw_inner_entry(c, top + 4, "Tailscale Client", has_bullet=True)
-        self._draw_inner_entry(c, top + 7, "Tailscale Client", has_bullet=True)
+        # Active Directory (no rate, no bullet)
+        self._draw_inner_ad_entry(c, top + 1)
+        # Two Tailscale Clients (device cards, 4 rows each)
+        main_peers = [p for p in DEMO_PEERS if p.site == "main"]
+        self._draw_client_card(c, top + 4, main_peers[0])
+        self._draw_client_card(c, top + 8, main_peers[1])
         # Label at bottom
         _center_text(c, SITE_LEFT + 1, top + h - 2, SITE_WIDTH - 2, "Main Office", SITE_LABEL_STYLE)
 
@@ -197,15 +296,17 @@ class ArchitectureDemo(Widget):
         top = REMOTE_USER_TOP
         h = REMOTE_USER_H
         _draw_rounded_box(c, SITE_LEFT, top, SITE_WIDTH, h, SITE_BORDER_STYLE)
-        self._draw_inner_entry(c, top + 1, "Tailscale Client", has_bullet=True)
+        remote_peers = [p for p in DEMO_PEERS if p.site == "remote"]
+        self._draw_client_card(c, top + 1, remote_peers[0])
         _center_text(c, SITE_LEFT + 1, top + h - 2, SITE_WIDTH - 2, "Remote User", SITE_LABEL_STYLE)
 
     def _draw_branch_office(self, c: CharCanvas) -> None:
         top = BRANCH_OFFICE_TOP
         h = BRANCH_OFFICE_H
         _draw_rounded_box(c, SITE_LEFT, top, SITE_WIDTH, h, SITE_BORDER_STYLE)
-        self._draw_inner_entry(c, top + 1, "Tailscale Client", has_bullet=True)
-        self._draw_inner_entry(c, top + 4, "Tailscale Client", has_bullet=True)
+        branch_peers = [p for p in DEMO_PEERS if p.site == "branch"]
+        self._draw_client_card(c, top + 1, branch_peers[0])
+        self._draw_client_card(c, top + 5, branch_peers[1])
         _center_text(c, SITE_LEFT + 1, top + h - 2, SITE_WIDTH - 2, "Branch Office", SITE_LABEL_STYLE)
 
     # ------------------------------------------------------------------
@@ -221,8 +322,8 @@ class ArchitectureDemo(Widget):
         # Small circle at top-left interior
         c.set(left + 2, top + 1, "○", ARROW_STYLE)
         # Title lines
-        _center_text(c, left + 1, top + 4, w - 2, "Tailscale", COORD_FILL_STYLE)
-        _center_text(c, left + 1, top + 5, w - 2, "Coordination Server", COORD_FILL_STYLE)
+        _center_text(c, left + 1, top + 5, w - 2, "Tailscale", COORD_FILL_STYLE)
+        _center_text(c, left + 1, top + 6, w - 2, "Coordination Server", COORD_FILL_STYLE)
 
     # ------------------------------------------------------------------
     # Auth Server
@@ -238,109 +339,106 @@ class ArchitectureDemo(Widget):
         _center_text(c, left + 1, top + 2, w - 2, "eg. Office 365", SITE_LABEL_STYLE)
 
     # ------------------------------------------------------------------
-    # Connection arrows: clients → Coordination Server
+    # Animated connection belts: clients → Coordination Server
     # ------------------------------------------------------------------
 
     def _draw_connections(self, c: CharCanvas) -> None:
-        """Draw horizontal arrows from each Tailscale Client bullet to the Coord box."""
-        # Right edge of the inner box (bullet position x)
-        bullet_x = SITE_LEFT + INNER_BOX_LEFT_OFFSET + INNER_BOX_WIDTH - 2
-        # Right border of site box
-        site_right = SITE_LEFT + SITE_WIDTH - 1
-        # Entry point into coordination server (left edge)
-        coord_entry_x = COORD_LEFT
+        """Draw animated chevron-stripe belts from each client to the Coord box,
+        plus a 2-row belt from Coord to Auth Server."""
 
-        # The rows where each Tailscale Client bullet sits (content row = box_top + 1)
-        # Main Office: clients at box_top 5 and 8 → rows 6 and 9
-        # Remote User: client at box_top 16 → row 17
-        # Branch Office: clients at box_top 23 and 26 → rows 24 and 27
-        client_rows = [
-            MAIN_OFFICE_TOP + 4 + 1,    # = 6
-            MAIN_OFFICE_TOP + 7 + 1,    # = 9
-            REMOTE_USER_TOP + 1 + 1,    # = 17
-            BRANCH_OFFICE_TOP + 1 + 1,  # = 24
-            BRANCH_OFFICE_TOP + 4 + 1,  # = 27
-        ]
+        # x-range for belts: right border of inner box + 1 → left border of coord box - 1
+        # Right border of inner client card
+        card_right = SITE_LEFT + INNER_BOX_LEFT_OFFSET + INNER_BOX_WIDTH - 1
+        belt_x_start = card_right + 1
+        belt_x_end = COORD_LEFT - 1
 
-        # Coordination server left edge entry row: middle of coord box
-        coord_mid_y = COORD_TOP + COORD_HEIGHT // 2
+        # Map each DemoPeer to the two rows used for its belt.
+        # Each client card top row → the card's two content rows are +1 (hostname) and +2 (rate).
+        # We use those same two rows as the belt rows so the belt aligns with the card.
+        #
+        # Main Office clients: top+4 and top+8
+        main_top = MAIN_OFFICE_TOP
+        remote_top = REMOTE_USER_TOP
+        branch_top = BRANCH_OFFICE_TOP
 
-        # Merge column between site boxes and coord server
-        merge_x = ARROW_MERGE_X
+        # (peer, belt_top_row)  — top_row is the hostname row, top_row+1 is the rate row
+        peer_belt_rows: list[tuple[DemoPeer, int]] = []
+        main_peers = [p for p in DEMO_PEERS if p.site == "main"]
+        peer_belt_rows.append((main_peers[0], main_top + 4 + 1))    # hostname row
+        peer_belt_rows.append((main_peers[1], main_top + 8 + 1))
 
-        for row in client_rows:
-            # Horizontal line from bullet_x+1 to site_right
-            for x in range(bullet_x + 1, site_right + 1):
-                c.set(x, row, "─", ARROW_STYLE)
-            # Continue horizontal to merge column
-            for x in range(site_right + 1, merge_x + 1):
-                c.set(x, row, "─", ARROW_STYLE)
+        remote_peers = [p for p in DEMO_PEERS if p.site == "remote"]
+        peer_belt_rows.append((remote_peers[0], remote_top + 1 + 1))
 
-        # Vertical merge line connecting all client rows to coord_mid_y
-        min_row = min(client_rows)
-        max_row = max(client_rows)
-        for y in range(min_row, max_row + 1):
-            if y not in client_rows:
-                c.set(merge_x, y, "│", ARROW_STYLE)
-            else:
-                # T-junction or pass-through
-                c.set(merge_x, y, "┤", ARROW_STYLE)
+        branch_peers = [p for p in DEMO_PEERS if p.site == "branch"]
+        peer_belt_rows.append((branch_peers[0], branch_top + 1 + 1))
+        peer_belt_rows.append((branch_peers[1], branch_top + 5 + 1))
 
-        # Horizontal line from merge column to coord box, at coord_mid_y
-        for x in range(merge_x + 1, coord_entry_x):
-            c.set(x, coord_mid_y, "─", ARROW_STYLE)
-        # Arrowhead entering coord box
-        c.set(coord_entry_x, coord_mid_y, "▶", ARROW_STYLE)
+        for peer, y_top in peer_belt_rows:
+            y_bot = y_top + 1
+            state = self._belt_states.get(peer.host_name)
+            if state is None:
+                continue
+            # Top row: peer→coord (going right, ▶)
+            self._renderer._draw_hlane(
+                c, y_top, belt_x_start, belt_x_end,
+                going_left=False,
+                phase=state.in_lane.phase,
+                tier=state.in_tier,
+                dim=False,
+            )
+            # Bottom row: coord→peer (going left, ◀)
+            self._renderer._draw_hlane(
+                c, y_bot, belt_x_start, belt_x_end,
+                going_left=True,
+                phase=state.out_lane.phase,
+                tier=state.out_tier,
+                dim=False,
+            )
 
-        # Corner connecting merge column to coord mid row
-        if coord_mid_y > max_row:
-            # Need to go down from max_row to coord_mid_y at merge_x
-            for y in range(max_row + 1, coord_mid_y):
-                c.set(merge_x, y, "│", ARROW_STYLE)
-            c.set(merge_x, max_row, "╰", ARROW_STYLE)
-            c.set(merge_x, coord_mid_y, "╭", ARROW_STYLE)
-        elif coord_mid_y < min_row:
-            for y in range(coord_mid_y + 1, min_row):
-                c.set(merge_x, y, "│", ARROW_STYLE)
-            c.set(merge_x, min_row, "╭", ARROW_STYLE)
-            c.set(merge_x, coord_mid_y, "╰", ARROW_STYLE)
-        # If coord_mid_y is within client_rows range, it's already connected
-
-        # Horizontal line from coord right edge to auth server left edge
+        # Coord → Auth Server belt (2 rows)
         coord_right = COORD_LEFT + COORD_WIDTH - 1
         auth_entry_y = AUTH_TOP + AUTH_HEIGHT // 2
         auth_left = AUTH_LEFT
 
-        # The coord → auth arrow: go from coord box right edge to auth box left
-        # Horizontal at the auth entry row
-        for x in range(coord_right + 1, auth_left):
-            c.set(x, auth_entry_y, "─", ARROW_STYLE)
-        c.set(auth_left, auth_entry_y, "▶", ARROW_STYLE)
+        coord_to_auth_top = auth_entry_y
+        coord_to_auth_bot = auth_entry_y + 1
+
+        ca_tier = self._coord_to_auth_tier
+        ca_phase = self._coord_to_auth_state.phase
+
+        # top row: going right (coord→auth)
+        self._renderer._draw_hlane(
+            c, coord_to_auth_top, coord_right + 1, auth_left - 1,
+            going_left=False,
+            phase=ca_phase,
+            tier=ca_tier,
+            dim=False,
+        )
+        # bottom row: going left (auth→coord)
+        self._renderer._draw_hlane(
+            c, coord_to_auth_bot, coord_right + 1, auth_left - 1,
+            going_left=True,
+            phase=ca_phase,
+            tier=ca_tier,
+            dim=False,
+        )
 
     # ------------------------------------------------------------------
-    # Auth Server → Active Directory curved arrow
+    # Auth Server → Active Directory curved arrow (static)
     # ------------------------------------------------------------------
 
     def _draw_auth_to_ad_arrow(self, c: CharCanvas) -> None:
         """Long curved arrow from Auth Server top, over the diagram, to Active Directory."""
-        # Auth Server top-center
         auth_mid_x = AUTH_LEFT + AUTH_WIDTH // 2
         auth_top_y = AUTH_TOP
 
-        # Active Directory entry: content row inside main office
         # AD box is at MAIN_OFFICE_TOP + 1, content row = MAIN_OFFICE_TOP + 2
         ad_y = MAIN_OFFICE_TOP + 2
-        # AD box right border is at SITE_LEFT + INNER_BOX_LEFT_OFFSET + INNER_BOX_WIDTH - 1
         ad_right_x = SITE_LEFT + INNER_BOX_LEFT_OFFSET + INNER_BOX_WIDTH - 1
 
-        # The arrow goes:
-        # 1. Up from auth_top_y to row 0 (top of canvas)
-        # 2. Left along row 0 from auth_mid_x to just past site right
-        # 3. Down from row 0 to ad_y at a column near ad_right_x
-        # 4. Left to ad_right_x with arrowhead ◀
-
-        arc_y = 0   # top routing row
-        arc_down_x = ad_right_x + 2  # column where we descend
+        arc_y = 0
+        arc_down_x = ad_right_x + 2
 
         # 1. Vertical segment going up from auth top
         for y in range(arc_y + 1, auth_top_y):
@@ -361,7 +459,6 @@ class ArchitectureDemo(Widget):
         # 4. Horizontal run left from arc_down_x to ad_right_x+1 with arrowhead
         for x in range(ad_right_x + 1, arc_down_x):
             c.set(x, ad_y, "─", ARROW_STYLE)
-        # Arrowhead pointing left into AD box right border area
         c.set(ad_right_x, ad_y, "◀", ARROW_STYLE)
 
 
