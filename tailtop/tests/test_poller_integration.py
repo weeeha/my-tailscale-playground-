@@ -38,4 +38,4 @@ async def test_poller_populates_app() -> None:
             if app.status is not None:
                 break
         assert app.status is not None
-        assert app.query_one(DeviceList).__len__() == status.total_count
+        assert app.query_one(DeviceList).__len__() == status.total_count + 1  # + self

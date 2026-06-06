@@ -15,6 +15,9 @@ from enum import Enum
 # Tailscale serializes a never-handshaked node with this Go zero-value time.
 _ZERO_TIME = "0001-01-01T00:00:00Z"
 
+# OS hostnames that aren't useful as a display name (iOS reports "localhost").
+_GENERIC_HOSTNAMES = {"", "localhost"}
+
 
 class ConnType(str, Enum):
     """How we currently reach a peer."""
@@ -54,6 +57,11 @@ class Peer:
     tx_bytes: int
     last_handshake: datetime | None
     key_expiry: datetime | None
+    created: datetime | None = None
+    allowed_ips: list[str] = field(default_factory=list)  # advertised routes
+    addrs: list[str] = field(default_factory=list)  # candidate endpoints (self only)
+    peerapi: list[str] = field(default_factory=list)  # PeerAPI URLs
+    cap_map: dict = field(default_factory=dict)  # node attributes (self only)
     tags: list[str] = field(default_factory=list)
     is_self: bool = False
 
@@ -61,6 +69,19 @@ class Peer:
 
     @property
     def name(self) -> str:
+        """Prefer the MagicDNS label; fall back to OS hostname.
+
+        iOS devices report ``localhost`` as their OS hostname, so we surface the
+        tailnet name (first DNS label) instead — matching the official apps.
+        """
+        if self.host_name.lower() not in _GENERIC_HOSTNAMES:
+            return self.host_name
+        label = self.dns_name.split(".", 1)[0]
+        return label or self.host_name or "unknown"
+
+    @property
+    def host_label(self) -> str:
+        """The raw OS hostname, shown as a secondary annotation when generic."""
         return self.host_name
 
     @property
@@ -127,9 +148,26 @@ class Peer:
             tx_bytes=int(d.get("TxBytes", 0) or 0),
             last_handshake=_parse_time(d.get("LastHandshake")),
             key_expiry=_parse_time(d.get("KeyExpiry")),
+            created=_parse_time(d.get("Created")),
+            allowed_ips=list(d.get("AllowedIPs") or []),
+            addrs=list(d.get("Addrs") or []),
+            peerapi=list(d.get("PeerAPIURL") or []),
+            cap_map=dict(d.get("CapMap") or {}),
             tags=list(d.get("Tags") or []),
             is_self=is_self,
         )
+
+    @property
+    def attributes(self) -> list[tuple[str, str]]:
+        """Flatten CapMap into (name, value) rows for display (self only)."""
+        rows: list[tuple[str, str]] = []
+        for key, vals in sorted(self.cap_map.items()):
+            short = key.rsplit("/", 1)[-1]
+            if isinstance(vals, list) and vals:
+                rows.append((short, ", ".join(str(v) for v in vals)))
+            else:
+                rows.append((short, "true"))
+        return rows
 
 
 @dataclass
@@ -159,6 +197,17 @@ class Status:
     def sorted_peers(self) -> list[Peer]:
         """Online first, then alphabetical — matches the GUI's feel."""
         return sorted(self.peers, key=lambda p: (not p.online, p.name.lower()))
+
+    def all_nodes(self) -> list[Peer]:
+        """Self pinned at the top, then sorted peers (like the official apps).
+
+        A blank self (e.g. disconnected / no state) is omitted.
+        """
+        nodes: list[Peer] = []
+        if self.self_peer.id:
+            nodes.append(self.self_peer)
+        nodes.extend(self.sorted_peers())
+        return nodes
 
     @classmethod
     def from_json(cls, d: dict) -> "Status":

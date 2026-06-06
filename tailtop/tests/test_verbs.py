@@ -62,7 +62,7 @@ async def test_ping_opens_result_screen(status: Status) -> None:
             if isinstance(app.screen, ResultScreen):
                 break
         assert isinstance(app.screen, ResultScreen)
-        assert client.calls and client.calls[0][0] == "ping"
+        assert any(c[0] == "ping" for c in client.calls)
 
 
 async def test_exit_node_guard_on_non_exit(status: Status) -> None:

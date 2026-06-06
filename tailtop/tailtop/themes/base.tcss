@@ -37,7 +37,7 @@ StatusBar {
 }
 
 #device-list {
-    width: 42%;
+    width: 28%;
     border-right: solid #23232c;
     background: #0d0d12;
     padding: 0;
@@ -56,9 +56,53 @@ StatusBar {
     background: #243049;
 }
 
+/* ---- device detail (3rd column splits into info + charts) ---- */
+
 #detail-pane {
     width: 1fr;
-    padding: 1 2;
+    padding: 0 1;
+}
+
+#detail-title {
+    height: 2;
+    padding: 1 1 0 1;
+}
+
+#detail-cols {
+    height: 1fr;
+}
+
+#detail-info {
+    width: 46%;
+    overflow-y: auto;
+}
+
+#detail-charts {
+    width: 1fr;
+    overflow-y: auto;
+}
+
+.dpanel {
+    height: auto;
+    border: round #23232c;
+    border-title-color: #8bb6ff;
+    padding: 0 1;
+    margin: 1 1 0 1;
+}
+
+#latency-chart {
+    height: 10;
+    border: round #23232c;
+    border-title-color: #8bb6ff;
+    padding: 0 1;
+    margin: 1 1 0 1;
+}
+
+#detail-actions {
+    height: 1;
+    padding: 0 1;
+    margin: 1 1 0 1;
+    color: #6b6f78;
 }
 
 /* placeholders for not-yet-built modes */

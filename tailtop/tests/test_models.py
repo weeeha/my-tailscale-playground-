@@ -79,6 +79,40 @@ def test_magic_dns_strips_trailing_dot() -> None:
     assert p.magic_dns == "artstation.tail01c8fc.ts.net"
 
 
+def test_name_prefers_magicdns_for_localhost() -> None:
+    """iOS reports HostName='localhost'; show the tailnet label instead."""
+    p = Peer.from_json(
+        {"HostName": "localhost", "DNSName": "ipad-air-5th-gen-wifi.tail01c8fc.ts.net."}
+    )
+    assert p.name == "ipad-air-5th-gen-wifi"
+    assert p.host_label == "localhost"
+
+
+def test_name_keeps_real_hostname() -> None:
+    p = Peer.from_json({"HostName": "ArtStation", "DNSName": "artstation.tail.ts.net."})
+    assert p.name == "ArtStation"
+
+
+def test_new_fields_parse() -> None:
+    p = Peer.from_json(
+        {
+            "AllowedIPs": ["100.64.0.22/32"],
+            "Addrs": ["203.0.113.10:41641"],
+            "PeerAPIURL": ["http://100.64.0.22:1234"],
+            "CapMap": {"node:tsAutoUpdate": [True], "https://x/cap/admin": [True]},
+            "Created": "2026-05-21T02:09:50Z",
+        }
+    )
+    assert p.allowed_ips == ["100.64.0.22/32"]
+    assert p.addrs == ["203.0.113.10:41641"]
+    assert p.peerapi == ["http://100.64.0.22:1234"]
+    assert p.created is not None
+    # attributes flatten; node: prefix kept, URL caps shortened to last segment
+    names = {n for n, _ in p.attributes}
+    assert "node:tsAutoUpdate" in names
+    assert "admin" in names
+
+
 def test_zero_handshake_is_none() -> None:
     p = Peer.from_json({"LastHandshake": "0001-01-01T00:00:00Z"})
     assert p.last_handshake is None
