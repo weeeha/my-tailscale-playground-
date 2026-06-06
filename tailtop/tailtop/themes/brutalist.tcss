@@ -51,6 +51,6 @@ ObservatoryMode {
 /* brutalist belt — hard contrast */
 
 ObservatoryMode BeltView,
-TheBaseMode.brutalist BeltView {
+TheBaseMode BeltView {
     background: #000000;
 }

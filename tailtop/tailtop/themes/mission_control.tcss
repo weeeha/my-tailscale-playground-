@@ -47,6 +47,6 @@ CockpitMode {
 /* mission control belt — high-saturation, operator-now */
 
 CockpitMode BeltView,
-TheBaseMode.mission BeltView {
+TheBaseMode BeltView {
     background: #0a0e1a;
 }

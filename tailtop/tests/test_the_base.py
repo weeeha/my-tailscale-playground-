@@ -137,3 +137,20 @@ async def test_empty_tailnet_does_not_crash_or_select() -> None:
         mode = pilot.app.query_one(TheBaseMode)
         mode.update_data(status, rates)
         assert mode._selected_id is None
+
+
+async def test_selection_from_app_is_honored_on_first_entry(status_with_peers: Status) -> None:
+    from tailtop.app import TailtopApp
+    app = TailtopApp(auto_poll=False)
+    async with app.run_test() as pilot:
+        # Pre-set the app-level selection before switching to TheBaseMode.
+        # (status_with_peers has p1 online, p2 offline, p1 is online.)
+        for _ in range(4):
+            if app.active_mode == "the_base":
+                break
+            await pilot.press("tab")
+        app.selected_peer_id = "p1"
+        rates = RateHistory()
+        mode = pilot.app.query_one(TheBaseMode)
+        mode.update_data(status_with_peers, rates)
+        assert mode._selected_id == "p1"

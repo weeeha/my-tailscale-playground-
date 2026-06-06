@@ -49,9 +49,11 @@ class TheBaseMode(ModeView):
         import time
         now = time.monotonic()
 
-        # Header.
-        agg_rx = sum(rates.current_rx(p.id) for p in status.peers)
-        agg_tx = sum(rates.current_tx(p.id) for p in status.peers)
+        # Belt — update first so its computed aggregate is authoritative.
+        belt = self.query_one(BeltView)
+        belt.update_data(status, rates, now=now)
+
+        # Header — uses the belt's aggregate for consistency.
         header = Text()
         header.append("▌ TAILNET · THE BASE", style="bold #8bb6ff")
         header.append("   ")
@@ -60,16 +62,17 @@ class TheBaseMode(ModeView):
         else:
             header.append(status.backend_state, style="#f0c674")
         header.append("   ")
-        header.append(f"↓{human_rate(agg_rx)}  ↑{human_rate(agg_tx)}", style="dim")
+        header.append(f"↓{human_rate(belt._aggregate_rx)}  ↑{human_rate(belt._aggregate_tx)}", style="dim")
         self.query_one("#tb-header", Static).update(header)
 
         # Alert strip.
         self.query_one(AlertStrip).set_status(status)
 
-        # Belt.
-        self.query_one(BeltView).update_data(status, rates, now=now)
+        # Seed selection from app-level state if not yet chosen locally.
+        if self._selected_id is None and hasattr(self.app, "selected_peer_id") and self.app.selected_peer_id:
+            self._selected_id = self.app.selected_peer_id
 
-        # Default selection: first online peer if none chosen.
+        # Default selection: first online peer if still none.
         if self._selected_id is None:
             for p in status.peers:
                 if p.online:
