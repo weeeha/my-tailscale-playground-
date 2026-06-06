@@ -288,6 +288,48 @@ class BeltRenderer:
             self._draw_peer_card(canvas, px, py, peer, state, dim)
             self._draw_belt(canvas, cx, cy, px, py, state, dim)
 
+    def render_bus(
+        self,
+        *,
+        canvas: CharCanvas,
+        branches: list[BusBranch],
+        belt_states: dict[str, BeltState],
+        hub_peer: Peer,
+        peers_by_id: dict[str, Peer],
+        selected_id: str | None,
+    ) -> None:
+        trunk_y = canvas.height // 2
+
+        # Hub label at left edge.
+        name = hub_peer.host_name[:18] or "self"
+        canvas.write(0, trunk_y, name, HUB_CARD_STYLE)
+        canvas.write(len(name), trunk_y, "═", HUB_CARD_STYLE)
+
+        if not branches:
+            return
+
+        # Trunk extent: from hub to the furthest branch.
+        max_x = max(b.x_offset for b in branches)
+        for x in range(2, min(canvas.width - 1, max_x + 1)):
+            canvas.set(x, trunk_y, "─", "")
+
+        # Branches.
+        for b in branches:
+            peer = peers_by_id.get(b.peer_id)
+            state = belt_states.get(b.peer_id)
+            if peer is None or state is None:
+                continue
+            dim = selected_id is not None and selected_id != b.peer_id
+
+            if b.side == "top":
+                py = max(0, trunk_y - 3)
+                self._draw_belt(canvas, b.x_offset, trunk_y, b.x_offset, py, state, dim)
+                self._draw_peer_card(canvas, b.x_offset, py - 1, peer, state, dim)
+            else:
+                py = min(canvas.height - 1, trunk_y + 3)
+                self._draw_belt(canvas, b.x_offset, trunk_y, b.x_offset, py, state, dim)
+                self._draw_peer_card(canvas, b.x_offset, py + 1, peer, state, dim)
+
     def _draw_peer_card(
         self,
         canvas: CharCanvas,

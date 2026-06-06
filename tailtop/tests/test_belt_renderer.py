@@ -118,3 +118,77 @@ def test_render_hub_uses_dashed_glyph_for_derp_peers() -> None:
         selected_id=None,
     )
     assert "╎" in canvas.to_plain()
+
+
+from tailtop.widgets.belt import BusBranch, BusLayout  # noqa: E402
+
+
+def test_render_bus_draws_hub_at_left_edge() -> None:
+    canvas = CharCanvas(width=60, height=12)
+    hub = _peer("hub")
+    BeltRenderer().render_bus(
+        canvas=canvas,
+        branches=[],
+        belt_states={},
+        hub_peer=hub,
+        peers_by_id={"hub": hub},
+        selected_id=None,
+    )
+    first_line = canvas.to_plain().splitlines()[canvas.height // 2]
+    assert "hub" in first_line[:10]
+
+
+def test_render_bus_paints_trunk_across_canvas() -> None:
+    canvas = CharCanvas(width=40, height=12)
+    hub = _peer("hub")
+    branches = [BusBranch(peer_id="x", side="top", x_offset=10)]
+    states = {
+        "x": BeltState(
+            peer_id="x",
+            conn_type=ConnType.DIRECT,
+            in_lane=LaneState(),
+            out_lane=LaneState(),
+            in_tier="idle",
+            out_tier="idle",
+        )
+    }
+    peers = {"hub": hub, "x": _peer("x")}
+    BeltRenderer().render_bus(
+        canvas=canvas,
+        branches=branches,
+        belt_states=states,
+        hub_peer=hub,
+        peers_by_id=peers,
+        selected_id=None,
+    )
+    mid_line = canvas.to_plain().splitlines()[canvas.height // 2]
+    assert "─" in mid_line
+
+
+def test_render_bus_places_top_branch_above_trunk() -> None:
+    canvas = CharCanvas(width=40, height=12)
+    hub = _peer("hub")
+    branches = [BusBranch(peer_id="up", side="top", x_offset=15)]
+    states = {
+        "up": BeltState(
+            peer_id="up",
+            conn_type=ConnType.DIRECT,
+            in_lane=LaneState(),
+            out_lane=LaneState(),
+            in_tier="idle",
+            out_tier="idle",
+        )
+    }
+    peers = {"hub": hub, "up": _peer("up")}
+    BeltRenderer().render_bus(
+        canvas=canvas,
+        branches=branches,
+        belt_states=states,
+        hub_peer=hub,
+        peers_by_id=peers,
+        selected_id=None,
+    )
+    plain = canvas.to_plain().splitlines()
+    trunk_y = canvas.height // 2
+    above = "\n".join(plain[:trunk_y])
+    assert "up" in above
