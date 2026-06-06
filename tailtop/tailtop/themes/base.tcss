@@ -69,3 +69,14 @@ StatusBar {
     text-align: center;
     color: #6b6f78;
 }
+
+/* ---- BeltView (defaults; overridden per theme) ---- */
+
+BeltView {
+    width: 1fr;
+    height: 1fr;
+    background: #0d0d12;
+    color: #cfd3da;
+    padding: 0;
+    /* Inline character output; Rich Text supplies the per-char styling. */
+}

@@ -7,3 +7,10 @@ ComfortMode #comfort-header {
 ComfortMode #detail-pane {
     background: #101017;
 }
+
+/* studio belt — muted, calm */
+
+ComfortMode BeltView,
+TheBaseMode BeltView {
+    background: #101017;
+}
