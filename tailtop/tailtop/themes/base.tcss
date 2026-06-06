@@ -113,3 +113,43 @@ StatusBar {
     text-align: center;
     color: #6b6f78;
 }
+
+/* ---- BeltView (defaults; overridden per theme) ---- */
+
+BeltView {
+    width: 1fr;
+    height: 1fr;
+    background: #0d0d12;
+    color: #cfd3da;
+    padding: 0;
+    /* Inline character output; Rich Text supplies the per-char styling. */
+}
+
+/* ---- TheBase layout ---- */
+
+#tb-header {
+    height: 1;
+    padding: 0 1;
+    color: #cfd3da;
+    border-bottom: solid #23232c;
+}
+
+#tb-alert {
+    height: 1;
+    padding: 0 1;
+    border-bottom: solid #23232c;
+}
+
+#tb-body {
+    height: 1fr;
+}
+
+#tb-belt {
+    width: 1fr;
+}
+
+#tb-detail {
+    width: 36;
+    padding: 1 2;
+    border-left: solid #23232c;
+}

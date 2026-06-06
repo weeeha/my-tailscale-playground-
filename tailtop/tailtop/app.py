@@ -8,7 +8,10 @@ and report back via modal screens or notifications.
 
 from __future__ import annotations
 
+import argparse
+import os
 import subprocess
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -35,8 +38,10 @@ from tailtop.data.poller import Poller
 from tailtop.modes.cockpit import CockpitMode
 from tailtop.modes.comfort import ComfortMode
 from tailtop.modes.observatory import ObservatoryMode
+from tailtop.modes.the_base import TheBaseMode
 from tailtop.screens import ConfirmScreen, InputScreen, ResultScreen
 from tailtop.state import RateHistory
+from tailtop.widgets.splash import SplashScreen
 from tailtop.widgets.status_bar import StatusBar
 
 _THEMES = Path(__file__).parent / "themes"
@@ -66,7 +71,7 @@ class TailtopApp(App):
         Binding("q", "quit", "Quit"),
     ]
 
-    MODE_ORDER = ["comfort", "cockpit", "observatory"]
+    MODE_ORDER = ["comfort", "cockpit", "observatory", "the_base"]
 
     status: reactive[Status | None] = reactive(None)
     active_mode: reactive[str] = reactive("comfort")
@@ -75,24 +80,38 @@ class TailtopApp(App):
 
     netcheck_self: reactive[NetCheck | None] = reactive(None)
 
-    def __init__(self, client: TailscaleClient | None = None, auto_poll: bool = True) -> None:
+    def __init__(
+        self,
+        client: TailscaleClient | None = None,
+        auto_poll: bool = True,
+        splash: bool | None = None,
+    ) -> None:
         super().__init__()
         self.client = client or TailscaleClient()
         self.rates = RateHistory()
         self.latency = LatencyProbe(self.client)
         self.auto_poll = auto_poll
         self.poller = Poller(self.client, self._on_status, self._on_error, interval=2.0)
+        self._splash_enabled = auto_poll if splash is None else splash
+        self._splash: SplashScreen | None = None
 
     def compose(self) -> ComposeResult:
         with ContentSwitcher(initial="comfort", id="modes"):
             yield ComfortMode(id="comfort")
             yield CockpitMode(id="cockpit")
             yield ObservatoryMode(id="observatory")
+            yield TheBaseMode(id="the_base")
         yield StatusBar(id="statusbar")
 
     def on_mount(self) -> None:
         self._refresh_status_bar()
+        if self._splash_enabled:
+            self._splash = SplashScreen()
+            self.push_screen(self._splash)
+            self.set_timer(3.5, self._dismiss_splash)
         if not self.client.available:
+            if self._splash is not None:
+                self._splash.set_message("tailscale CLI not found")
             self.notify(
                 "tailscale CLI not found on PATH — install it or start tailscaled.",
                 title="tailtop",
@@ -109,7 +128,17 @@ class TailtopApp(App):
         for p in (status.self_peer, *status.peers):
             self.rates.update(p.id, p.rx_bytes, p.tx_bytes, now)
         self.error = ""
+        # Dismiss before triggering watch_status so the mode widgets on the
+        # base screen are queryable (the splash hides them otherwise).
+        self._dismiss_splash()
         self.status = status  # triggers watch_status
+
+    def _dismiss_splash(self) -> None:
+        splash = self._splash
+        if splash is None:
+            return
+        self._splash = None
+        splash.safe_dismiss()
 
     def _on_error(self, exc: Exception) -> None:
         self.error = self._friendly_error(exc)
@@ -330,8 +359,22 @@ class TailtopApp(App):
         await self.latency.stop()
 
 
-def main() -> None:
-    TailtopApp().run()
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(prog="tailtop", description="htop for your tailnet")
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        default=os.environ.get("TAILTOP_DEMO") in ("1", "true", "yes"),
+        help="Run against a synthetic tech-company tailnet (no tailscaled needed).",
+    )
+    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+
+    client = None
+    if args.demo:
+        from tailtop.data.demo import DemoClient
+
+        client = DemoClient()
+    TailtopApp(client=client).run()
 
 
 if __name__ == "__main__":

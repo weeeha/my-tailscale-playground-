@@ -14,8 +14,8 @@ CockpitMode {
 
 #cockpit-grid {
     layout: grid;
-    grid-size: 2;
-    grid-columns: 1fr 1fr;
+    grid-size: 3;
+    grid-columns: 1fr 1fr 1fr;
     grid-rows: auto;
     grid-gutter: 1 2;
     padding: 1 2;
@@ -42,4 +42,11 @@ CockpitMode {
     padding: 0 2;
     color: #6b6f78;
     border-top: solid #2a2410;
+}
+
+/* mission control belt — high-saturation, operator-now */
+
+CockpitMode BeltView,
+TheBaseMode BeltView {
+    background: #0a0e1a;
 }
