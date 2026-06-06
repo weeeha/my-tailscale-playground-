@@ -1,0 +1,6 @@
+{"schema":1,"host":"SuperClockFast","collected_at":"2026-06-06T23:55:13Z",
+"config":{"model":"Raspberry Pi 5 Model B Rev 1.0","serial":"324980ba3412132f","cpu_cores":4,"mem_total_mb":8061,"os":"Debian GNU/Linux 13 (trixie)","kernel":"6.12.75+rpt-rpi-2712","disk_total_gb":28.1},
+"thermal":{"soc_temp_c":54.5,"vcgencmd_present":true,"throttled_now":false,"under_voltage_now":false},
+"health":{"load1":0.63,"cpu_pct":6.2,"mem_pct":27.4,"disk_used_pct":27.2,"disk_free_gb":19.2,"uptime_s":1541092},
+"side_things":{"displays":[{"connector":"HDMI-A-1","status":"connected"}],"usb":[],"usb_count":5,"battery":{"present":true,"pct":99}},
+"app":{"name":"superclock","running":false,"last_render":""}}

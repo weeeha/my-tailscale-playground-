@@ -1,0 +1,6 @@
+{"schema":1,"host":"nickv-orangepizero2w","collected_at":"2026-06-06T23:55:14Z",
+"config":{"model":"OrangePi Zero2 W","serial":"","cpu_cores":4,"mem_total_mb":3930,"os":"Arch Linux ARM","kernel":"6.1.31-1","disk_total_gb":28.4},
+"thermal":{"soc_temp_c":55.5,"vcgencmd_present":false,"throttled_now":false,"under_voltage_now":false},
+"health":{"load1":1.45,"cpu_pct":12.0,"mem_pct":35.9,"disk_used_pct":18.8,"disk_free_gb":21.8,"uptime_s":1128160},
+"side_things":{"displays":[{"connector":"HDMI-A-1","status":"connected"}],"usb":[],"usb_count":6,"battery":{"present":false}},
+"app":{"name":"dashboard","running":false,"last_render":""}}
