@@ -194,3 +194,53 @@ def test_render_bus_places_top_branch_above_trunk() -> None:
     trunk_y = canvas.height // 2
     above = "\n".join(plain[:trunk_y])
     assert "up" in above
+
+
+from tailtop.widgets.belt import BeltView  # noqa: E402
+
+
+def test_render_hub_includes_aggregate_traffic_under_hub_name() -> None:
+    view = BeltView()
+    view.hub_peer = _peer("base")
+    view.peers_by_id = {"base": view.hub_peer}
+    view.layout_mode = "hub"
+    view._aggregate_rx = 25_800_000.0  # 25.8 MB/s
+    view._aggregate_tx = 14_100_000.0  # 14.1 MB/s
+    rendered = view.render()
+    plain = rendered.plain if hasattr(rendered, "plain") else str(rendered)
+    assert "25.8" in plain
+    assert "14.1" in plain
+
+
+def test_render_hub_peer_card_includes_rate_label() -> None:
+    canvas = CharCanvas(width=60, height=20)
+    layout = HubLayout()
+    hub_peer = _peer("hub")
+    peer = _peer("busy-peer")
+    layout.assign(peers=[peer], rates={"busy-peer": (200_000.0, 50_000.0)}, now=0.0)
+    in_lane = LaneState(cells_per_second=2.0)
+    out_lane = LaneState(cells_per_second=0.5)
+    belt_states = {
+        "busy-peer": BeltState(
+            peer_id="busy-peer",
+            conn_type=ConnType.DIRECT,
+            in_lane=in_lane,
+            out_lane=out_lane,
+            in_tier="busy",
+            out_tier="light",
+            rx_bps=200_000.0,
+            tx_bps=50_000.0,
+        ),
+    }
+    BeltRenderer().render_hub(
+        canvas=canvas,
+        layout=layout,
+        belt_states=belt_states,
+        hub_peer=hub_peer,
+        peers_by_id={"hub": hub_peer, "busy-peer": peer},
+        selected_id=None,
+    )
+    plain = canvas.to_plain()
+    # Compact rate label is "↓200K ↑50K"; assert the K marker appears
+    assert "200K" in plain
+    assert "50K" in plain

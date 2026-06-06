@@ -88,3 +88,14 @@ async def test_layout_auto_degrades_to_bus_in_narrow_terminal() -> None:
     assert view.layout_mode == "bus"
     view._on_resize_dims(width=80, height=24)
     assert view.layout_mode == "hub"
+
+
+async def test_render_shows_overflow_chip_when_more_than_eight_peers() -> None:
+    view = BeltView()
+    view.hub_peer = _make_self()
+    view.peers_by_id = {"self": _make_self()}
+    view.overflow_count = 4
+    view.layout_mode = "hub"
+    rendered = view.render()
+    plain = rendered.plain if hasattr(rendered, "plain") else str(rendered)
+    assert "+4 more" in plain

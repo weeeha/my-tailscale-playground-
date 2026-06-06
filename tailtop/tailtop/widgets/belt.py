@@ -206,6 +206,8 @@ class BeltState:
     out_lane: LaneState
     in_tier: str
     out_tier: str
+    rx_bps: float = 0.0
+    tx_bps: float = 0.0
 
 
 class CharCanvas:
@@ -265,13 +267,16 @@ class BeltRenderer:
         hub_peer: Peer,
         peers_by_id: dict[str, Peer],
         selected_id: str | None,
+        aggregate_rx: float = 0.0,
+        aggregate_tx: float = 0.0,
     ) -> None:
         cx, cy = canvas.width // 2, canvas.height // 2
 
         # Hub card at center (3 lines: name / aggregate / count).
         name = hub_peer.host_name[:18] or "self"
         canvas.write(cx - len(name) // 2, cy, name, HUB_CARD_STYLE)
-        canvas.write(cx - 4, cy + 1, "▣ base", DIM)
+        agg = f"▣ ↓{self._compact_rate(aggregate_rx)} ↑{self._compact_rate(aggregate_tx)}"
+        canvas.write(cx - len(agg) // 2, cy + 1, agg, DIM)
 
         # For each assigned slot, draw the peer card + belt segment.
         for peer_id, slot in layout._slot_of.items():
@@ -346,6 +351,17 @@ class BeltRenderer:
         if dim:
             style = "dim " + style if style else DIM
         canvas.write(x - len(name) // 2, y, name, style)
+        rate = f"↓{self._compact_rate(state.rx_bps)} ↑{self._compact_rate(state.tx_bps)}"
+        rate_style = "dim " + DIM if dim else DIM
+        canvas.write(x - len(rate) // 2, y + 1, rate, rate_style)
+
+    def _compact_rate(self, bps: float) -> str:
+        """Compact rate string: '0', '95K', '1.2M', '25.8M'."""
+        if bps < 1000:
+            return f"{int(bps)}"
+        if bps < 1_000_000:
+            return f"{int(bps / 1000)}K"
+        return f"{bps / 1_000_000:.1f}M"
 
     def _draw_belt(
         self,
@@ -461,6 +477,8 @@ class BeltView(Widget):
         self._last_tick: float | None = None
         self._anim_timer = None
         self._latest_rates: dict[str, tuple[float, float]] = {}
+        self._aggregate_rx: float = 0.0
+        self._aggregate_tx: float = 0.0
 
     def on_mount(self) -> None:
         self._anim_timer = self.set_interval(_ANIMATION_INTERVAL, self._on_animation_tick)
@@ -504,6 +522,8 @@ class BeltView(Widget):
             state.out_lane.cells_per_second = TreadAnimator.speed_for(tx)
             state.in_tier = TreadAnimator.tier_for(rx)
             state.out_tier = TreadAnimator.tier_for(tx)
+            state.rx_bps = rx
+            state.tx_bps = tx
 
         self._latest_rates = rate_map
 
@@ -511,6 +531,9 @@ class BeltView(Widget):
         for gone in list(self.belt_states.keys()):
             if gone not in self.peers_by_id:
                 self.belt_states.pop(gone, None)
+
+        self._aggregate_rx = sum(s.rx_bps for s in self.belt_states.values())
+        self._aggregate_tx = sum(s.tx_bps for s in self.belt_states.values())
 
         self.hub_layout.assign(peers=status.peers, rates=rate_map, now=now)
         self.overflow_count = self.hub_layout.overflow_count
@@ -551,6 +574,8 @@ class BeltView(Widget):
                 hub_peer=self.hub_peer,
                 peers_by_id=self.peers_by_id,
                 selected_id=self.selected_id,
+                aggregate_rx=self._aggregate_rx,
+                aggregate_tx=self._aggregate_tx,
             )
             if self.overflow_count > 0:
                 msg = f"+{self.overflow_count} more"
