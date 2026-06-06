@@ -12,8 +12,10 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from rich.text import Text
+from textual.widget import Widget
 
-from tailtop.data.models import ConnType, Peer
+from tailtop.data.models import ConnType, Peer, Status
+from tailtop.state import RateHistory
 
 
 @dataclass
@@ -424,3 +426,143 @@ class BeltRenderer:
         out_x = base_x + int(state.out_lane.position) % length
         canvas.set(in_x, y, TREAD_GLYPH[in_arrow], in_style)
         canvas.set(out_x, y, TREAD_GLYPH[out_arrow], out_style)
+
+
+# Animation tick at ~10 Hz.
+_ANIMATION_INTERVAL = 1 / 10
+_HUB_MIN_W, _HUB_MIN_H = 60, 20
+
+
+class BeltView(Widget):
+    """Animated belt-style topology widget.
+
+    External contract:
+      ``update_data(status, rates, now)`` — call on each poll (~2s).
+      The widget owns the animation timer internally.
+    """
+
+    DEFAULT_CSS = """
+    BeltView {
+        background: transparent;
+    }
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.layout_mode: str = "hub"
+        self.hub_layout = HubLayout()
+        self.bus_layout = BusLayout()
+        self.belt_states: dict[str, BeltState] = {}
+        self.hub_peer: Peer | None = None
+        self.peers_by_id: dict[str, Peer] = {}
+        self.overflow_count: int = 0
+        self.selected_id: str | None = None
+        self._renderer = BeltRenderer()
+        self._last_tick: float | None = None
+        self._anim_timer = None
+
+    def on_mount(self) -> None:
+        self._anim_timer = self.set_interval(_ANIMATION_INTERVAL, self._on_animation_tick)
+        self._on_resize_dims(self.size.width, self.size.height)
+
+    def on_resize(self, event) -> None:
+        self._on_resize_dims(event.size.width, event.size.height)
+
+    def _on_resize_dims(self, width: int, height: int) -> None:
+        if width >= _HUB_MIN_W and height >= _HUB_MIN_H:
+            self.layout_mode = "hub"
+        else:
+            self.layout_mode = "bus"
+        self.refresh()
+
+    def update_data(self, status: Status, rates: RateHistory, now: float) -> None:
+        """Refresh per-peer belt state from a new Status snapshot."""
+        self.hub_peer = status.self_peer
+        self.peers_by_id = {p.id: p for p in status.peers}
+        self.peers_by_id[status.self_peer.id] = status.self_peer
+
+        rate_map: dict[str, tuple[float, float]] = {}
+        for peer in status.peers:
+            rx = rates.current_rx(peer.id)
+            tx = rates.current_tx(peer.id)
+            rate_map[peer.id] = (rx, tx)
+
+            state = self.belt_states.get(peer.id)
+            if state is None:
+                state = BeltState(
+                    peer_id=peer.id,
+                    conn_type=peer.conn_type,
+                    in_lane=LaneState(),
+                    out_lane=LaneState(),
+                    in_tier="idle",
+                    out_tier="idle",
+                )
+                self.belt_states[peer.id] = state
+            state.conn_type = peer.conn_type
+            state.in_lane.cells_per_second = TreadAnimator.speed_for(rx)
+            state.out_lane.cells_per_second = TreadAnimator.speed_for(tx)
+            state.in_tier = TreadAnimator.tier_for(rx)
+            state.out_tier = TreadAnimator.tier_for(tx)
+
+        # Drop departed peers.
+        for gone in list(self.belt_states.keys()):
+            if gone not in self.peers_by_id:
+                self.belt_states.pop(gone, None)
+
+        self.hub_layout.assign(peers=status.peers, rates=rate_map, now=now)
+        self.overflow_count = self.hub_layout.overflow_count
+        self.refresh()
+
+    def set_selected(self, peer_id: str | None) -> None:
+        self.selected_id = peer_id
+        self.refresh()
+
+    def _on_animation_tick(self) -> None:
+        import time
+        now = time.monotonic()
+        dt = (now - self._last_tick) if self._last_tick is not None else _ANIMATION_INTERVAL
+        self._last_tick = now
+        for state in self.belt_states.values():
+            state.in_lane.advance(dt=dt, length=16)
+            state.out_lane.advance(dt=dt, length=16)
+        self.refresh()
+
+    def render(self):
+        width = max(self.size.width, 40)
+        height = max(self.size.height, 12)
+        canvas = CharCanvas(width=width, height=height)
+
+        if self.hub_peer is None:
+            canvas.write(width // 2 - 7, height // 2, "loading belts…", DIM)
+            return canvas.to_text()
+
+        if self.layout_mode == "hub":
+            self._renderer.render_hub(
+                canvas=canvas,
+                layout=self.hub_layout,
+                belt_states=self.belt_states,
+                hub_peer=self.hub_peer,
+                peers_by_id=self.peers_by_id,
+                selected_id=self.selected_id,
+            )
+            if self.overflow_count > 0:
+                msg = f"+{self.overflow_count} more"
+                canvas.write(width // 2 - len(msg) // 2, height - 2, msg, DIM)
+        else:
+            branches = self.bus_layout.arrange(
+                peers=list(self.peers_by_id.values()),
+                rates={
+                    pid: (s.in_lane.cells_per_second, s.out_lane.cells_per_second)
+                    for pid, s in self.belt_states.items()
+                },
+            )
+            self._renderer.render_bus(
+                canvas=canvas,
+                branches=branches,
+                belt_states=self.belt_states,
+                hub_peer=self.hub_peer,
+                peers_by_id=self.peers_by_id,
+                selected_id=self.selected_id,
+            )
+
+        return canvas.to_text()
