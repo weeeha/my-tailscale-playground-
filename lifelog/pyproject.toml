@@ -1,0 +1,31 @@
+[project]
+name = "lifelog"
+version = "0.1.0"
+description = "A private, local WiFi-sensing time-tracker for a Tailscale device fleet."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "BSD-3-Clause" }
+keywords = ["tailscale", "wifi-sensing", "csi", "time-tracking", "presence"]
+dependencies = []  # core is pure stdlib
+
+[project.optional-dependencies]
+tui = ["textual>=1.0,<2.0"]
+mqtt = ["paho-mqtt>=2.0,<3.0"]
+dev = ["pytest>=8.0,<9.0"]
+
+[project.scripts]
+lifelog = "lifelog.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lifelog"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
