@@ -190,6 +190,29 @@ Each phase is independently demoable and builds on the last.
 
 ---
 
+## 9a. Re-use: RuView as the edge sensing layer
+
+[RuView](https://github.com/ruvnet/RuView) (MIT) already solves the hard bottom
+layer — ESP32-S3/C6 CSI firmware + DSP/ML for breathing, presence, motion (and
+heart-rate/pose/fall), published over MQTT (HA auto-discovery). It is *RF-only*:
+it has no device-context fusion, no time-tracking timeline, no activity labeling,
+no Tailscale transport. That's exactly lifelog's scope, so the two compose:
+
+```
+RuView nodes (ESP32 CSI → DSP/ML → MQTT)        lifelog (this repo)
+  L1 presence / L2 breathing+motion   ──MQTT──►  RuViewBridge → SensorEvents
+                                                  + L3 device context (Phase 2)
+                                                  → fusion → timeline → sleep/report
+```
+
+- **Re-use:** ESP32 firmware, breathing/presence DSP, MQTT semantic states,
+  per-room calibration (MicroLoRA), HA-discovery topic convention.
+- **Keep ours:** device/appliance context fusion, the time-tracking timeline,
+  activity labeling, sleep *analytics*, Tailscale transport, tailtop UI.
+- **This deletes the "real sensor agent" phase** — `RuViewBridge`
+  (`collectors/ruview.py`) is the drop-in. Our `breathing.py` stays as a
+  zero-dependency fallback. Validate RuView's heart-rate/pose claims before use.
+
 ## 10. Stack choices
 
 - **Sensor agent / fusion:** Python (numpy/scipy for the DSP; matches the existing

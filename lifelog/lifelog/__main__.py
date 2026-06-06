@@ -102,6 +102,21 @@ def cmd_collect(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ingest_ruview(args: argparse.Namespace) -> int:
+    from .collectors.ruview import RuViewBridge
+
+    store = Store(args.db)
+    bridge = RuViewBridge(LocalBus(store), host=args.host, port=args.port)
+    print(f"bridging RuView MQTT {args.host}:{args.port} ({bridge.topic}) → {args.db}\n"
+          f"(Ctrl-C to stop)")
+    try:
+        bridge.run()
+    except KeyboardInterrupt:
+        store.commit()
+        print("\nstopped.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="lifelog", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -127,6 +142,12 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--interval", type=float, default=30.0, help="poll seconds (live)")
     c.add_argument("--cycles", type=int, default=0, help="stop after N polls (0=forever)")
     c.set_defaults(func=cmd_collect)
+
+    rv = sub.add_parser("ingest-ruview", help="bridge RuView CSI sensing (MQTT) → timeline")
+    rv.add_argument("--db", required=True)
+    rv.add_argument("--host", default="127.0.0.1", help="RuView MQTT broker host")
+    rv.add_argument("--port", type=int, default=1883)
+    rv.set_defaults(func=cmd_ingest_ruview)
 
     args = p.parse_args(argv)
     return args.func(args)

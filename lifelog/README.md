@@ -27,6 +27,24 @@ Collectors shipped:
 | `HttpPlugCollector` | appliance on/off | Tasmota / Shelly local HTTP |
 | `TailscaleOnlineCollector` | tailnet device up | `tailscale status --json` |
 
+### RuView CSI sensing as the edge layer
+
+Rather than build ESP32 CSI capture ourselves, lifelog can adopt
+[RuView](https://github.com/ruvnet/RuView) — a mature WiFi-CSI platform that
+publishes breathing / presence / motion over MQTT. `RuViewBridge` translates
+those messages into lifelog `SensorEvent`s, so RuView's *senses* feed lifelog's
+*localization + activity labeling + time-tracking* (the layers RuView lacks):
+
+```sh
+python -m lifelog ingest-ruview --db live.db --host <ruview-broker>
+```
+
+RuView handles L1/L2 (RF presence + vitals); lifelog adds L3 device context and
+the timeline. `translate()` parses both per-entity (`ruview/<node>/bfld/presence/state`)
+and JSON `edge_vitals` payloads defensively — verify against RuView ADR-115 and
+set your node→room map. Heart-rate / pose claims should be validated on your own
+hardware before depending on them.
+
 ## Phase 1 — stub-first pipeline (still the core)
 
 The whole pipeline runs end-to-end **today, on any machine, no hardware**, using a

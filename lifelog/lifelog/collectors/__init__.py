@@ -16,6 +16,7 @@ from .base import Collector
 from .network import NetworkDeviceCollector, ping_reachable, tcp_reachable
 from .plug import HttpPlugCollector, parse_shelly, parse_tasmota
 from .runner import CollectorRunner
+from .ruview import RuViewBridge, translate as ruview_translate
 from .tailscale import TailscaleOnlineCollector
 
 __all__ = [
@@ -28,4 +29,6 @@ __all__ = [
     "parse_shelly",
     "TailscaleOnlineCollector",
     "CollectorRunner",
+    "RuViewBridge",
+    "ruview_translate",
 ]
