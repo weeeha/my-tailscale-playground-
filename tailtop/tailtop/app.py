@@ -36,6 +36,7 @@ from tailtop.data.poller import Poller
 from tailtop.modes.cockpit import CockpitMode
 from tailtop.modes.comfort import ComfortMode
 from tailtop.modes.observatory import ObservatoryMode
+from tailtop.modes.the_base import TheBaseMode
 from tailtop.screens import ConfirmScreen, InputScreen, ResultScreen
 from tailtop.state import RateHistory
 from tailtop.widgets.splash import SplashScreen
@@ -68,7 +69,7 @@ class TailtopApp(App):
         Binding("q", "quit", "Quit"),
     ]
 
-    MODE_ORDER = ["comfort", "cockpit", "observatory"]
+    MODE_ORDER = ["comfort", "cockpit", "observatory", "the_base"]
 
     status: reactive[Status | None] = reactive(None)
     active_mode: reactive[str] = reactive("comfort")
@@ -94,6 +95,7 @@ class TailtopApp(App):
             yield ComfortMode(id="comfort")
             yield CockpitMode(id="cockpit")
             yield ObservatoryMode(id="observatory")
+            yield TheBaseMode(id="the_base")
         yield StatusBar(id="statusbar")
 
     def on_mount(self) -> None:
