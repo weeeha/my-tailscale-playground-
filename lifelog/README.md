@@ -6,7 +6,28 @@ with nothing leaving the machine.
 
 Full design: [`../notes/lifelog-wifi-sensing-design.md`](../notes/lifelog-wifi-sensing-design.md).
 
-## Status: Phase 1 scaffold (stub-first, runnable)
+## Status: Phase 2 — real context collectors (L3) wired in
+
+Phase 1 (the simulated end-to-end pipeline) plus **real device collectors** that
+poll your actual hardware and feed the same fusion engine:
+
+```sh
+python -m lifelog collect --once          # probe your devices once, print state
+python -m lifelog collect --db live.db    # poll live → context timeline
+```
+
+Point `lifelog/collectors/defaults.py` at your real PlayStation / PC / plug /
+tailnet peer. Unreachable devices degrade to "off"/"undetermined" — never a crash.
+
+Collectors shipped:
+
+| Collector | Signal | How |
+|-----------|--------|-----|
+| `NetworkDeviceCollector` | console/PC powered on | TCP-connect or ping reachability |
+| `HttpPlugCollector` | appliance on/off | Tasmota / Shelly local HTTP |
+| `TailscaleOnlineCollector` | tailnet device up | `tailscale status --json` |
+
+## Phase 1 — stub-first pipeline (still the core)
 
 The whole pipeline runs end-to-end **today, on any machine, no hardware**, using a
 simulated day of sensor events:

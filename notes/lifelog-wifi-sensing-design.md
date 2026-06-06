@@ -168,7 +168,7 @@ rules (examples):
 |-------|-------------|--------|
 | **0 Inventory** | run capability probe across fleet | which node = which role |
 | **1 Presence MVP** | 1 sensor agent + MQTT + SQLite + tailtop panel showing *current room + dwell* | end-to-end pipeline, no ML |
-| **2 Context fusion** | device/plug collectors + rule-based activity labels | gaming/working/watching — fastest value |
+| **2 Context fusion** ✅ | device/plug collectors + rule-based activity labels | gaming/working/watching — fastest value |
 | **3 Sleep + breathing** | bedside CSI node → breaths/min → sleep detection + sleep card | the "wow" feature |
 | **4 Localization refine** | RSSI fingerprinting + reed/PIR anchors for sub-room zones | fridge-vs-stove granularity |
 | **5 Analytics + ML** | daily rollups, baselines, anomaly alerts; classifier trained on self-labeled data | long-term insight |
