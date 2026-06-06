@@ -1,9 +1,9 @@
-/* studio.tcss — Comfort's theme: soft, clean, spacious */
+/* studio.tcss — List mode's theme: soft, clean, spacious */
 
-ComfortMode #comfort-header {
+ListMode #list-header {
     color: #8bb6ff;
 }
 
-ComfortMode #detail-pane {
+ListMode #detail-pane {
     background: #101017;
 }

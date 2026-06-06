@@ -33,11 +33,12 @@ from tailtop.data.models import Peer, Status
 from tailtop.data.netcheck import NetCheck, parse_netcheck
 from tailtop.data.poller import Poller
 from tailtop.modes.cockpit import CockpitMode
-from tailtop.modes.comfort import ComfortMode
+from tailtop.modes.list_mode import ListMode
 from tailtop.modes.observatory import ObservatoryMode
 from tailtop.screens import ConfirmScreen, InputScreen, ResultScreen
 from tailtop.state import RateHistory
-from tailtop.widgets.status_bar import StatusBar
+from tailtop.widgets.header_bar import HeaderBar
+from tailtop.widgets.hotkey_bar import HotkeyBar
 
 _THEMES = Path(__file__).parent / "themes"
 
@@ -54,7 +55,7 @@ class TailtopApp(App):
 
     BINDINGS = [
         Binding("tab", "cycle_mode", "Mode", priority=True),
-        Binding("p", "ping", "Ping"),
+        Binding("p", "command_palette", "Palette"),
         Binding("c", "copy_ip", "Copy IP"),
         Binding("w", "whois", "Whois"),
         Binding("n", "netcheck", "Netcheck"),
@@ -66,10 +67,11 @@ class TailtopApp(App):
         Binding("q", "quit", "Quit"),
     ]
 
-    MODE_ORDER = ["comfort", "cockpit", "observatory"]
+    # Tab display + cycle order (matches the header). "list" is the default.
+    MODE_ORDER = ["cockpit", "list", "observatory"]
 
     status: reactive[Status | None] = reactive(None)
-    active_mode: reactive[str] = reactive("comfort")
+    active_mode: reactive[str] = reactive("list")
     error: reactive[str] = reactive("")
     selected_peer_id: reactive[str] = reactive("")
 
@@ -84,14 +86,15 @@ class TailtopApp(App):
         self.poller = Poller(self.client, self._on_status, self._on_error, interval=2.0)
 
     def compose(self) -> ComposeResult:
-        with ContentSwitcher(initial="comfort", id="modes"):
-            yield ComfortMode(id="comfort")
+        yield HeaderBar(id="header")
+        with ContentSwitcher(initial="list", id="modes"):
+            yield ListMode(id="list")
             yield CockpitMode(id="cockpit")
             yield ObservatoryMode(id="observatory")
-        yield StatusBar(id="statusbar")
+        yield HotkeyBar(id="hotkeys")
 
     def on_mount(self) -> None:
-        self._refresh_status_bar()
+        self._refresh_chrome()
         if not self.client.available:
             self.notify(
                 "tailscale CLI not found on PATH — install it or start tailscaled.",
@@ -113,7 +116,7 @@ class TailtopApp(App):
 
     def _on_error(self, exc: Exception) -> None:
         self.error = self._friendly_error(exc)
-        self._refresh_status_bar()
+        self._refresh_chrome()
 
     @staticmethod
     def _friendly_error(exc: Exception) -> str:
@@ -128,17 +131,26 @@ class TailtopApp(App):
     def watch_status(self, status: Status | None) -> None:
         if status is not None:
             self._mode_widget().update_data(status, self.rates)
-        self._refresh_status_bar()
+        self._refresh_chrome()
 
     def _mode_widget(self):
         return self.query_one(f"#{self.active_mode}")
 
-    def _refresh_status_bar(self) -> None:
+    def _refresh_chrome(self) -> None:
         try:
-            bar = self.query_one(StatusBar)
+            self.query_one(HeaderBar).set_state(self.status, self.active_mode, self.error)
         except Exception:
-            return
-        bar.set_state(self.status, self.active_mode, self.error)
+            pass
+        try:
+            self.query_one(HotkeyBar).set_state(self.selected_peer() is not None)
+        except Exception:
+            pass
+
+    def watch_selected_peer_id(self, _id: str) -> None:
+        try:
+            self.query_one(HotkeyBar).set_state(self.selected_peer() is not None)
+        except Exception:
+            pass
 
     # ---- selection ---------------------------------------------------------
 
@@ -153,20 +165,25 @@ class TailtopApp(App):
 
     # ---- mode actions ------------------------------------------------------
 
-    def action_cycle_mode(self) -> None:
-        idx = self.MODE_ORDER.index(self.active_mode)
-        self.active_mode = self.MODE_ORDER[(idx + 1) % len(self.MODE_ORDER)]
-        self.query_one(ContentSwitcher).current = self.active_mode
+    def action_set_mode(self, mode_id: str) -> None:
+        if mode_id not in self.MODE_ORDER or mode_id == self.active_mode:
+            return
+        self.active_mode = mode_id
+        self.query_one(ContentSwitcher).current = mode_id
         mode = self._mode_widget()
         self.poller.set_interval(getattr(mode, "cadence", 2.0))
-        # only ping while the detail screen (Comfort) is visible
-        if self.active_mode == "comfort":
+        # only ping while the detail screen (List) is visible
+        if self.active_mode == "list":
             self.latency.retarget(self.selected_peer())
         else:
             self.latency.retarget(None)
         if self.status is not None:
             mode.update_data(self.status, self.rates)
-        self._refresh_status_bar()
+        self._refresh_chrome()
+
+    def action_cycle_mode(self) -> None:
+        idx = self.MODE_ORDER.index(self.active_mode)
+        self.action_set_mode(self.MODE_ORDER[(idx + 1) % len(self.MODE_ORDER)])
 
     @work
     async def ensure_netcheck(self) -> None:
@@ -184,8 +201,8 @@ class TailtopApp(App):
 
     def action_help(self) -> None:
         self.notify(
-            "Tab modes · j/k navigate · p ping · c copy · w whois · n netcheck · "
-            "e exit-node · f send · s ssh · ⌘P palette · q quit",
+            "Tab/click modes · j/k navigate · p palette · s ssh · f send · "
+            "e exit-node · c copy · w whois · n netcheck · q quit",
             title="tailtop",
             timeout=8,
         )

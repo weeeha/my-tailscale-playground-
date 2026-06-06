@@ -54,13 +54,14 @@ async def test_tab_cycles_modes(status: Status) -> None:
     async with app.run_test() as pilot:
         app._on_status(status)
         await pilot.pause()
-        assert app.active_mode == "comfort"
-        await pilot.press("tab")
-        assert app.active_mode == "cockpit"
+        # default is List; Tab cycles in display order cockpit→list→observatory
+        assert app.active_mode == "list"
         await pilot.press("tab")
         assert app.active_mode == "observatory"
         await pilot.press("tab")
-        assert app.active_mode == "comfort"
+        assert app.active_mode == "cockpit"
+        await pilot.press("tab")
+        assert app.active_mode == "list"
 
 
 async def test_disconnected_empty_state_does_not_crash() -> None:
@@ -86,8 +87,8 @@ async def test_navigation_updates_selection(status: Status) -> None:
     async with app.run_test() as pilot:
         app._on_status(status)
         await pilot.pause()
-        comfort = app.query_one("#comfort")
-        first = comfort._selected_id
+        list_mode = app.query_one("#list")
+        first = list_mode._selected_id
         await pilot.press("j")
         await pilot.pause()
-        assert comfort._selected_id != first  # moved to next peer
+        assert list_mode._selected_id != first  # moved to next peer

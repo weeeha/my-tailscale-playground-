@@ -1,6 +1,6 @@
 """Base class for mode views.
 
-A mode is a full-screen view (Comfort / Cockpit / Observatory). The app owns
+A mode is a full-screen view (List / Cockpit / Observatory). The app owns
 the data and pushes it down via ``update_data`` whenever a fresh poll lands or
 the user switches into the mode.
 """

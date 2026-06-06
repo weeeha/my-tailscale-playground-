@@ -1,4 +1,4 @@
-"""Comfort mode — List view + rich device detail. Intent: manage."""
+"""List mode — device list + rich device detail. Intent: manage."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from tailtop.widgets.detail_pane import DeviceDetail
 from tailtop.widgets.device_list import DeviceList
 
 
-class ComfortMode(ModeView):
+class ListMode(ModeView):
     cadence = 2.0
 
     def __init__(self, **kwargs) -> None:
@@ -24,8 +24,8 @@ class ComfortMode(ModeView):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Static("Devices", id="comfort-header")
-            with Horizontal(id="comfort-body"):
+            yield Static("Devices", id="list-header")
+            with Horizontal(id="list-body"):
                 yield DeviceList(id="device-list")
                 yield DeviceDetail(id="detail-pane")
 
@@ -37,7 +37,7 @@ class ComfortMode(ModeView):
     def update_data(self, status: Status, rates: RateHistory) -> None:
         self._status = status
         peers = status.all_nodes()  # self pinned at top, then peers
-        header = self.query_one("#comfort-header", Static)
+        header = self.query_one("#list-header", Static)
         if not status.connected:
             header.update(f"Devices · {status.backend_state}")
         else:
@@ -49,7 +49,6 @@ class ComfortMode(ModeView):
         if self._selected_id is None:
             self._select(peers[0])
         else:
-            # refresh the currently-selected peer's data
             current = next((p for p in peers if p.id == self._selected_id), None)
             if current:
                 self._selected_peer = current
@@ -73,7 +72,7 @@ class ComfortMode(ModeView):
 
     def _tick(self) -> None:
         # cheap: re-render from current buffers so the chart animates at ~1 Hz
-        if self._selected_peer is not None and getattr(self.app, "active_mode", "") == "comfort":
+        if self._selected_peer is not None and getattr(self.app, "active_mode", "") == "list":
             self._render_detail()
 
     def _render_detail(self) -> None:

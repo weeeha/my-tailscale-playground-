@@ -14,7 +14,68 @@ ModeView {
     width: 1fr;
 }
 
-StatusBar {
+/* ---- HeaderBar (top chrome) ---- */
+
+HeaderBar {
+    dock: top;
+    height: 1;
+    background: #15151c;
+    color: #cfd3da;
+    padding: 0 2;
+}
+
+HeaderBar > #brand {
+    width: auto;
+    color: #ff8855;
+    text-style: bold;
+    margin: 0 4 0 0;
+}
+
+HeaderBar > #tabs {
+    width: auto;
+    height: 1;
+}
+
+HeaderBar ModeTab {
+    width: auto;
+    height: 1;
+    padding: 0 1;
+    color: #6b6f78;
+    text-style: underline;
+    margin: 0 1 0 0;
+}
+
+HeaderBar ModeTab:hover {
+    background: #1a1a22;
+    color: #cfd3da;
+}
+
+HeaderBar ModeTab.-active {
+    background: #c792ea;
+    color: #0d0d12;
+    text-style: bold;
+}
+
+HeaderBar > #identity {
+    width: auto;
+    height: 1;
+    margin: 0 0 0 3;
+    padding: 0 1;
+    background: #1a1a22;
+}
+
+HeaderBar > #spacer {
+    width: 1fr;
+}
+
+HeaderBar > #status {
+    width: auto;
+    height: 1;
+}
+
+/* ---- HotkeyBar (bottom chrome) ---- */
+
+HotkeyBar {
     dock: bottom;
     height: 1;
     background: #15151c;
@@ -22,9 +83,9 @@ StatusBar {
     padding: 0 1;
 }
 
-/* ---- Comfort layout ---- */
+/* ---- List layout ---- */
 
-#comfort-header {
+#list-header {
     height: 1;
     padding: 0 1;
     color: #8a8f99;
@@ -32,7 +93,7 @@ StatusBar {
     border-bottom: solid #23232c;
 }
 
-#comfort-body {
+#list-body {
     height: 1fr;
 }
 
