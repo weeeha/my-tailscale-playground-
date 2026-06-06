@@ -68,7 +68,7 @@ on the Tailscale side, needs no root on the Mac, and shells out to the
 | Script language | POSIX `sh` | Present on every Pi (RPi OS, Debian trixie, Armbian) with no interpreter assumptions. |
 | Thermal source | `/sys/class/thermal/*` (universal), `vcgencmd` **only when present** | Orange Pi (Allwinner) has no `vcgencmd`; Broadcom Pis add throttle/under-voltage flags. |
 | Vitals in models | App owns `vitals_by_id: dict[str, Vitals]`; threaded into widgets like `rates` | Keeps `models.py` parsing pure; mirrors how `RateHistory` is passed, not attached to `Peer`. |
-| "Which peers are Pis" | `tag:pi` ACL tag, else a hostname allowlist (config) | Avoids SSHing every linux peer blindly; discovered dynamically so new Pis appear automatically. |
+| "Which peers are Pis" | **Hostname allowlist** (no ACL tags in use) matched against live `status` | Avoids SSHing every linux peer blindly; new Pis are added to the list. |
 | Charts | Reuse `state.sparkline` (temp/cpu); plotext optional in detail | No new deps; consistent with RX/TX sparklines. |
 | Script packaged as | package data `tailtop/agent/fleet_collect.sh`, loaded via `importlib.resources` | Ships with the wheel; one canonical copy. |
 
@@ -321,15 +321,25 @@ Discovered dynamically at runtime; this table is for reference, not hardcoding.
 `dashboard-ink-kitchen` / `shboard-ki` not yet enrolled — appears automatically
 when it joins the tailnet and matches `tag:pi`/the allowlist.
 
-## 15. Open questions / prerequisites
+## 15. Prerequisites — verified live 2026-06-06
 
-1. **Tailscale SSH on the Pis** — is `tailscale up --ssh` enabled and do ACLs
-   allow Mac→Pi SSH for the chosen user? If not, fall back to OpenSSH with a key
-   (collector becomes machine-specific). *Mechanism is config; default
-   `tailscale ssh`, fallback `ssh`.*
-2. **SSH user** on the Pis (`pi`? `nickv`?).
-3. **`tag:pi`** — does this ACL tag exist, or should we ship a hostname allowlist
-   in config for v1?
-4. **Mac `tailscaled` running** — tailtop (and this poller) require the local
-   daemon up; verify it's started.
-5. **PR target branch** — `tailtop` (active integration branch) vs `main`.
+All transport prerequisites confirmed against the running tailnet:
+
+1. **Tailscale SSH** — enabled on **all 8 Pis** (admin console shows the `SSH`
+   badge on every Pi; a probe reached the remote user-lookup stage). Transport =
+   `tailscale ssh`; **no OpenSSH-key fallback needed**.
+2. **SSH user** (from `~/.ssh/config`; must be a real local account on the Pi):
+   - SuperClocks (`fastclock`, `slowclock`, `smallclock`, `squareclock`) → `nickv2026`
+   - Orange Pi (`nickv-orangepizero2w`) → `nickv`
+   - e-paper (`dashboard-ink-bed`, `dashboard3eink`, `plantdashboard`) → **resolve
+     at runtime**: per-host config → `~/.ssh/config` `User` → one-time `whoami`
+     auto-probe. `collect_vitals` takes a per-host user map; unknowns auto-resolve.
+3. **Pi detection** — no ACL tags in use → a **hostname allowlist** (the 8 above,
+   matched against live `status`) selects Pi peers.
+4. **Mac `tailscaled`** — `BackendState: Running` ✓.
+5. **Hardware confirmed by kernel:** clocks/e-paper/plant are Broadcom RPi OS
+   (`rpt-rpi-*`; `fastclock` is a **Pi 5 / BCM2712**) → `vcgencmd` present; Orange
+   Pi is Allwinner (`6.1.31`) → no `vcgencmd`, thermal via `/sys/class/thermal`.
+
+**Remaining decision:** PR target — defaulting to `tailtop` (the active
+integration branch); say so if you'd rather target `main`.
