@@ -9,6 +9,7 @@ See docs/superpowers/specs/2026-06-06-tailtop-belt-view-spec.md.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 from tailtop.data.models import Peer
 
@@ -119,3 +120,40 @@ class HubLayout:
         self.overflow_count = max(0, len(online) - len(new_assignments))
 
         self._slot_of = new_assignments
+
+
+@dataclass
+class BusBranch:
+    """A single peer's branch off the horizontal trunk."""
+
+    peer_id: str
+    side: Literal["top", "bottom"]
+    x_offset: int
+
+
+@dataclass
+class BusLayout:
+    """Horizontal trunk; peers branch alternating top/bottom, bandwidth-ordered."""
+
+    branch_spacing: int = 12  # columns between branch x_offsets
+
+    def arrange(
+        self,
+        peers: list[Peer],
+        rates: dict[str, tuple[float, float]],
+    ) -> list[BusBranch]:
+        online = [p for p in peers if p.online]
+        ranked = sorted(
+            online,
+            key=lambda p: -(rates.get(p.id, (0.0, 0.0))[0] + rates.get(p.id, (0.0, 0.0))[1]),
+        )
+        branches: list[BusBranch] = []
+        for i, p in enumerate(ranked):
+            branches.append(
+                BusBranch(
+                    peer_id=p.id,
+                    side="top" if i % 2 == 0 else "bottom",
+                    x_offset=self.branch_spacing * (i + 1),
+                )
+            )
+        return branches

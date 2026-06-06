@@ -93,3 +93,46 @@ def test_offline_peers_not_assigned() -> None:
     layout.assign(peers=peers, rates=rates, now=0.0)
     assert layout.slot_of("on") == "N"
     assert layout.slot_of("off") is None
+
+
+from tailtop.widgets.belt import BusBranch, BusLayout  # noqa: E402
+
+
+def test_bus_alternates_top_and_bottom() -> None:
+    layout = BusLayout()
+    peers = [_peer(f"p{i}", rx=(10 - i) * 1_000_000) for i in range(4)]
+    rates = {p.id: (p.rx_bytes, 0) for p in peers}
+    branches = layout.arrange(peers=peers, rates=rates)
+    sides = [b.side for b in branches]
+    assert sides == ["top", "bottom", "top", "bottom"]
+
+
+def test_bus_orders_by_combined_bandwidth() -> None:
+    layout = BusLayout()
+    peers = [_peer("low", rx=1_000), _peer("hi", rx=10_000_000), _peer("mid", rx=100_000)]
+    rates = {p.id: (p.rx_bytes, 0) for p in peers}
+    branches = layout.arrange(peers=peers, rates=rates)
+    assert [b.peer_id for b in branches] == ["hi", "mid", "low"]
+
+
+def test_bus_offsets_increment_along_trunk() -> None:
+    layout = BusLayout(branch_spacing=12)
+    peers = [_peer(f"p{i}") for i in range(3)]
+    rates = {p.id: (0.0, 0.0) for p in peers}
+    branches = layout.arrange(peers=peers, rates=rates)
+    assert [b.x_offset for b in branches] == [12, 24, 36]
+
+
+def test_bus_excludes_offline() -> None:
+    layout = BusLayout()
+    peers = [_peer("on"), _peer("off", online=False)]
+    rates = {"on": (0.0, 0.0), "off": (1_000_000.0, 0.0)}
+    branches = layout.arrange(peers=peers, rates=rates)
+    assert [b.peer_id for b in branches] == ["on"]
+
+
+def test_bus_branch_is_pure_dataclass() -> None:
+    b = BusBranch(peer_id="x", side="top", x_offset=12)
+    assert b.peer_id == "x"
+    assert b.side == "top"
+    assert b.x_offset == 12
