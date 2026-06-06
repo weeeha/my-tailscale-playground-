@@ -460,6 +460,7 @@ class BeltView(Widget):
         self._renderer = BeltRenderer()
         self._last_tick: float | None = None
         self._anim_timer = None
+        self._latest_rates: dict[str, tuple[float, float]] = {}
 
     def on_mount(self) -> None:
         self._anim_timer = self.set_interval(_ANIMATION_INTERVAL, self._on_animation_tick)
@@ -504,6 +505,8 @@ class BeltView(Widget):
             state.in_tier = TreadAnimator.tier_for(rx)
             state.out_tier = TreadAnimator.tier_for(tx)
 
+        self._latest_rates = rate_map
+
         # Drop departed peers.
         for gone in list(self.belt_states.keys()):
             if gone not in self.peers_by_id:
@@ -522,9 +525,13 @@ class BeltView(Widget):
         now = time.monotonic()
         dt = (now - self._last_tick) if self._last_tick is not None else _ANIMATION_INTERVAL
         self._last_tick = now
+        # Logical lane length: matches the arm length used in render_hub
+        # (cells from hub center to peer card minus the two endpoint cells).
+        arm = max(self.size.width, self.size.height) // 6
+        length = max(2, arm - 1)
         for state in self.belt_states.values():
-            state.in_lane.advance(dt=dt, length=16)
-            state.out_lane.advance(dt=dt, length=16)
+            state.in_lane.advance(dt=dt, length=length)
+            state.out_lane.advance(dt=dt, length=length)
         self.refresh()
 
     def render(self):
@@ -550,11 +557,8 @@ class BeltView(Widget):
                 canvas.write(width // 2 - len(msg) // 2, height - 2, msg, DIM)
         else:
             branches = self.bus_layout.arrange(
-                peers=list(self.peers_by_id.values()),
-                rates={
-                    pid: (s.in_lane.cells_per_second, s.out_lane.cells_per_second)
-                    for pid, s in self.belt_states.items()
-                },
+                peers=[p for p in self.peers_by_id.values() if not p.is_self],
+                rates=self._latest_rates,
             )
             self._renderer.render_bus(
                 canvas=canvas,
