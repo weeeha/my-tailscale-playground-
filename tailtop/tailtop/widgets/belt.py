@@ -20,16 +20,22 @@ from tailtop.state import RateHistory
 
 @dataclass
 class LaneState:
-    """One direction of a belt: tread speed and current head position."""
+    """One direction of a belt lane. ``phase`` selects which cells show the
+    chevron glyph each tick; ``cells_per_second`` drives the march speed."""
 
     cells_per_second: float = 0.0
-    position: float = 0.0
+    phase: float = 0.0
 
-    def advance(self, dt: float, length: int) -> None:
-        """Move the tread head forward by ``cells_per_second * dt``, wrapping at length."""
-        if self.cells_per_second <= 0 or length <= 0:
+    SPACING: int = 2  # class constant
+
+    def advance(self, dt: float, length: int = 0) -> None:
+        """Advance the march phase by ``cells_per_second * dt``, wrapping at SPACING.
+
+        ``length`` is accepted for backward compatibility with prior tests but
+        is no longer used."""
+        if self.cells_per_second <= 0:
             return
-        self.position = (self.position + self.cells_per_second * dt) % length
+        self.phase = (self.phase + self.cells_per_second * dt) % self.SPACING
 
 
 class TreadAnimator:
@@ -40,8 +46,8 @@ class TreadAnimator:
     HEAVY_BPS = 5_000_000        # 5 MB/s — busy/heavy boundary
 
     # Tread speed clamp (cells per second).
-    MIN_CELLS_PER_S = 0.67       # ~1.5 s per cell when traffic is barely above idle
-    MAX_CELLS_PER_S = 16.7       # ~0.06 s per cell when fully heavy
+    MIN_CELLS_PER_S = 0.5        # ~2 s per advance at idle-ish
+    MAX_CELLS_PER_S = 8.0        # ~0.125 s per advance at heavy
 
     @classmethod
     def tier_for(cls, rate_bps: float) -> str:
@@ -163,34 +169,13 @@ class BusLayout:
         return branches
 
 
-# ---- Glyphs ----
+# ---- Styles ----
 
-LANE_VERTICAL = {
-    ConnType.DIRECT: "│",
-    ConnType.DERP: "╎",
-    ConnType.IDLE: "┊",
-}
-LANE_HORIZONTAL = {
-    ConnType.DIRECT: "─",
-    ConnType.DERP: "╌",
-    ConnType.IDLE: "┄",
-}
-TREAD_GLYPH = {
-    "up": "▲",
-    "down": "▼",
-    "left": "◀",
-    "right": "▶",
-}
 TIER_STYLE = {
     "heavy": "bold #ffd166",
     "busy":  "#7be39b",
     "light": "#5b9bd5",
     "idle":  "dim #6b6f78",
-}
-LANE_STYLE = {
-    ConnType.DIRECT: "#3a6dbb",
-    ConnType.DERP:   "#7a5fa3",
-    ConnType.IDLE:   "dim #6b6f78",
 }
 DIM = "dim"
 HUB_CARD_STYLE = "bold #8bb6ff"
@@ -241,22 +226,255 @@ class CharCanvas:
         return out
 
 
-# ---- Hub geometry ----
-
-_SLOT_DIRECTION: dict[str, tuple[int, int]] = {
-    "N":  (0, -1),
-    "S":  (0,  1),
-    "E":  (1,  0),
-    "W":  (-1, 0),
-    "NE": (1, -1),
-    "NW": (-1, -1),
-    "SE": (1,  1),
-    "SW": (-1, 1),
-}
-
-
 class BeltRenderer:
     """Paints belts onto a CharCanvas. Pure: no Textual, no I/O."""
+
+    PEER_CARD_W = 14  # interior width
+    PEER_CARD_H = 4   # ┌─┐ + name + rate + └─┘
+
+    HUB_CARD_W = 16
+    HUB_CARD_H = 5
+
+    def _vchevron(self, going_up: bool) -> str:
+        return "▲" if going_up else "▼"
+
+    def _hchevron(self, going_left: bool) -> str:
+        return "◀" if going_left else "▶"
+
+    def _draw_vlane(
+        self,
+        canvas: CharCanvas,
+        x: int,
+        y_top: int,
+        y_bot: int,
+        going_up: bool,
+        phase: float,
+        tier: str,
+        dim: bool,
+    ) -> None:
+        """Vertical lane: draws a chevron stripe in column x from y_top..y_bot inclusive.
+        Idle tier draws nothing."""
+        if tier == "idle":
+            return
+        style = TIER_STYLE.get(tier, "")
+        if dim:
+            style = "dim " + style if style else "dim"
+        glyph = self._vchevron(going_up)
+        spacing = LaneState.SPACING
+        offset = int(phase)
+        for i, y in enumerate(range(min(y_top, y_bot), max(y_top, y_bot) + 1)):
+            if (i + offset) % spacing == 0:
+                canvas.set(x, y, glyph, style)
+
+    def _draw_hlane(
+        self,
+        canvas: CharCanvas,
+        y: int,
+        x_left: int,
+        x_right: int,
+        going_left: bool,
+        phase: float,
+        tier: str,
+        dim: bool,
+    ) -> None:
+        """Horizontal lane: chevron stripe in row y from x_left..x_right inclusive."""
+        if tier == "idle":
+            return
+        style = TIER_STYLE.get(tier, "")
+        if dim:
+            style = "dim " + style if style else "dim"
+        glyph = self._hchevron(going_left)
+        spacing = LaneState.SPACING
+        offset = int(phase)
+        for i, x in enumerate(range(min(x_left, x_right), max(x_left, x_right) + 1)):
+            if (i + offset) % spacing == 0:
+                canvas.set(x, y, glyph, style)
+
+    def _draw_peer_card(
+        self,
+        canvas: CharCanvas,
+        cx: int,  # center x of the card
+        top_y: int,  # top row of the box
+        peer: Peer,
+        state: BeltState,
+        dim: bool,
+    ) -> None:
+        """Draw a bordered peer card. cx is the horizontal anchor (center of card)."""
+        w = self.PEER_CARD_W
+        left = cx - w // 2
+        right = left + w - 1
+        name = peer.host_name[:w - 2]
+        rate = f"↑{self._compact_rate(state.tx_bps)} ↓{self._compact_rate(state.rx_bps)}"[:w - 2]
+
+        border_style = TIER_STYLE.get(state.in_tier, "")
+        if dim:
+            border_style = "dim " + border_style if border_style else "dim"
+
+        # Top border: ┌──...──┐
+        canvas.set(left, top_y, "┌", border_style)
+        for x in range(left + 1, right):
+            canvas.set(x, top_y, "─", border_style)
+        canvas.set(right, top_y, "┐", border_style)
+        # Name row: │ name │
+        canvas.set(left, top_y + 1, "│", border_style)
+        canvas.write(left + 2, top_y + 1, name.ljust(w - 2)[:w - 2], "" if not dim else "dim")
+        canvas.set(right, top_y + 1, "│", border_style)
+        # Rate row: │ rate │
+        canvas.set(left, top_y + 2, "│", border_style)
+        canvas.write(left + 2, top_y + 2, rate.ljust(w - 2)[:w - 2], "dim")
+        canvas.set(right, top_y + 2, "│", border_style)
+        # Bottom border: └──...──┘
+        canvas.set(left, top_y + 3, "└", border_style)
+        for x in range(left + 1, right):
+            canvas.set(x, top_y + 3, "─", border_style)
+        canvas.set(right, top_y + 3, "┘", border_style)
+
+    def _draw_hub_card(
+        self,
+        canvas: CharCanvas,
+        left: int,
+        top: int,
+        hub_peer: Peer,
+        aggregate_rx: float,
+        aggregate_tx: float,
+    ) -> None:
+        w = self.HUB_CARD_W
+        right = left + w - 1
+        name = hub_peer.host_name[:w - 2]
+        agg = f"↓{self._compact_rate(aggregate_rx)} ↑{self._compact_rate(aggregate_tx)}"[:w - 2]
+        style = HUB_CARD_STYLE
+        # Top
+        canvas.set(left, top, "┌", style)
+        for x in range(left + 1, right):
+            canvas.set(x, top, "─", style)
+        canvas.set(right, top, "┐", style)
+        # ▣ THE BASE row, centered
+        title = "▣ THE BASE"
+        title_x = left + (w - len(title)) // 2
+        canvas.set(left, top + 1, "│", style)
+        canvas.write(title_x, top + 1, title, style)
+        canvas.set(right, top + 1, "│", style)
+        # Aggregate row
+        agg_x = left + (w - len(agg)) // 2
+        canvas.set(left, top + 2, "│", style)
+        canvas.write(agg_x, top + 2, agg, "dim")
+        canvas.set(right, top + 2, "│", style)
+        # Hostname row
+        name_x = left + (w - len(name)) // 2
+        canvas.set(left, top + 3, "│", style)
+        canvas.write(name_x, top + 3, name, "dim")
+        canvas.set(right, top + 3, "│", style)
+        # Bottom
+        canvas.set(left, top + 4, "└", style)
+        for x in range(left + 1, right):
+            canvas.set(x, top + 4, "─", style)
+        canvas.set(right, top + 4, "┘", style)
+
+    def _compact_rate(self, bps: float) -> str:
+        """Compact rate string: '0', '95K', '1.2M', '25.8M'."""
+        if bps < 1000:
+            return f"{int(bps)}"
+        if bps < 1_000_000:
+            return f"{int(bps / 1000)}K"
+        return f"{bps / 1_000_000:.1f}M"
+
+    def render_bus(
+        self,
+        *,
+        canvas: CharCanvas,
+        branches: list[BusBranch],
+        belt_states: dict[str, BeltState],
+        hub_peer: Peer,
+        peers_by_id: dict[str, Peer],
+        selected_id: str | None,
+        aggregate_rx: float = 0.0,
+        aggregate_tx: float = 0.0,
+    ) -> None:
+        if canvas.width < self.HUB_CARD_W + 20 or canvas.height < self.HUB_CARD_H + self.PEER_CARD_H * 2 + 4:
+            # Too small — emit a hint
+            canvas.write(0, 0, "Resize terminal for The Base", "dim")
+            return
+
+        # Hub anchored at right edge, vertically centered.
+        hub_top = (canvas.height - self.HUB_CARD_H) // 2
+        hub_left = canvas.width - self.HUB_CARD_W - 1
+        self._draw_hub_card(canvas, hub_left, hub_top, hub_peer, aggregate_rx, aggregate_tx)
+
+        # Trunk runs horizontally in two rows just above and just below the hub's vertical center.
+        trunk_top_y = hub_top + self.HUB_CARD_H // 2 - 1
+        trunk_bot_y = trunk_top_y + 1
+        trunk_left = 2
+        trunk_right = hub_left - 1
+        if trunk_left >= trunk_right:
+            return
+
+        # Trunk lanes: top = inbound toward hub (◀), bottom = outbound from hub (▶).
+        # Aggregate phase: average of per-peer phases is a reasonable proxy. Sum the
+        # in/out cells_per_second to find the trunk's perceived speed.
+        agg_in_tier = "heavy" if aggregate_rx >= 5_000_000 else ("busy" if aggregate_rx >= 100_000 else ("light" if aggregate_rx > 0 else "idle"))
+        agg_out_tier = "heavy" if aggregate_tx >= 5_000_000 else ("busy" if aggregate_tx >= 100_000 else ("light" if aggregate_tx > 0 else "idle"))
+        # We don't have a separate trunk phase; reuse phase of first non-idle lane as a stand-in.
+        trunk_in_phase = next((s.in_lane.phase for s in belt_states.values() if s.in_tier != "idle"), 0.0)
+        trunk_out_phase = next((s.out_lane.phase for s in belt_states.values() if s.out_tier != "idle"), 0.0)
+
+        self._draw_hlane(canvas, trunk_top_y, trunk_left, trunk_right, going_left=True, phase=trunk_in_phase, tier=agg_in_tier, dim=False)
+        self._draw_hlane(canvas, trunk_bot_y, trunk_left, trunk_right, going_left=False, phase=trunk_out_phase, tier=agg_out_tier, dim=False)
+
+        # Hub join: a couple of dashes from trunk to hub card edge.
+        if hub_left - 1 > trunk_right:
+            for x in range(trunk_right + 1, hub_left):
+                canvas.set(x, trunk_top_y, "─", HUB_CARD_STYLE)
+                canvas.set(x, trunk_bot_y, "─", HUB_CARD_STYLE)
+
+        # Branches.
+        top_card_top = trunk_top_y - 2 - self.PEER_CARD_H  # peer card ends 2 cells above trunk
+        top_lane_top = top_card_top + self.PEER_CARD_H  # branch lane starts at peer card bottom
+        bot_card_top = trunk_bot_y + 3  # peer card starts 3 cells below trunk
+        bot_lane_bot = bot_card_top - 1  # branch lane ends 1 cell above peer card
+
+        for b in branches:
+            peer = peers_by_id.get(b.peer_id)
+            state = belt_states.get(b.peer_id)
+            if peer is None or state is None or peer.is_self:
+                continue
+            dim = selected_id is not None and selected_id != b.peer_id
+
+            cx = b.x_offset
+            if cx < trunk_left + 1 or cx > trunk_right - 1:
+                continue  # branch x off-canvas
+
+            if b.side == "top":
+                # Peer card above
+                if top_card_top < 0:
+                    continue
+                self._draw_peer_card(canvas, cx, top_card_top, peer, state, dim)
+                # Two-column branch lane between peer card bottom and trunk top
+                left_x = cx - 1
+                right_x = cx
+                if right_x > trunk_right or left_x < trunk_left:
+                    continue
+                self._draw_vlane(canvas, left_x, top_lane_top, trunk_top_y - 1,
+                                 going_up=True, phase=state.in_lane.phase,
+                                 tier=state.in_tier, dim=dim)
+                self._draw_vlane(canvas, right_x, top_lane_top, trunk_top_y - 1,
+                                 going_up=False, phase=state.out_lane.phase,
+                                 tier=state.out_tier, dim=dim)
+            else:
+                # Peer card below
+                if bot_card_top + self.PEER_CARD_H > canvas.height:
+                    continue
+                self._draw_peer_card(canvas, cx, bot_card_top, peer, state, dim)
+                left_x = cx - 1
+                right_x = cx
+                if right_x > trunk_right or left_x < trunk_left:
+                    continue
+                # Going DOWN from trunk to peer
+                self._draw_vlane(canvas, left_x, trunk_bot_y + 1, bot_lane_bot,
+                                 going_up=False, phase=state.in_lane.phase,
+                                 tier=state.in_tier, dim=dim)
+                self._draw_vlane(canvas, right_x, trunk_bot_y + 1, bot_lane_bot,
+                                 going_up=True, phase=state.out_lane.phase,
+                                 tier=state.out_tier, dim=dim)
 
     def render_hub(
         self,
@@ -270,178 +488,71 @@ class BeltRenderer:
         aggregate_rx: float = 0.0,
         aggregate_tx: float = 0.0,
     ) -> None:
-        cx, cy = canvas.width // 2, canvas.height // 2
+        if canvas.width < self.HUB_CARD_W + 30 or canvas.height < self.HUB_CARD_H + 12:
+            canvas.write(0, 0, "Resize terminal for The Base", "dim")
+            return
 
-        # Hub card at center (3 lines: name / aggregate / count).
-        name = hub_peer.host_name[:18] or "self"
-        canvas.write(cx - len(name) // 2, cy, name, HUB_CARD_STYLE)
-        agg = f"▣ ↓{self._compact_rate(aggregate_rx)} ↑{self._compact_rate(aggregate_tx)}"
-        canvas.write(cx - len(agg) // 2, cy + 1, agg, DIM)
+        # Hub centered.
+        cx = canvas.width // 2
+        cy = canvas.height // 2
+        hub_left = cx - self.HUB_CARD_W // 2
+        hub_top = cy - self.HUB_CARD_H // 2
+        self._draw_hub_card(canvas, hub_left, hub_top, hub_peer, aggregate_rx, aggregate_tx)
 
-        # For each assigned slot, draw the peer card + belt segment.
+        # Each slot: place the peer card and a two-column belt connecting it to the hub.
         for peer_id, slot in layout._slot_of.items():
-            dx, dy = _SLOT_DIRECTION[slot]
             peer = peers_by_id.get(peer_id)
             state = belt_states.get(peer_id)
             if peer is None or state is None:
                 continue
-
-            # Peer card position: ~6 cells out from hub along (dx, dy).
-            arm = max(canvas.width, canvas.height) // 6
-            px, py = cx + dx * arm, cy + dy * arm
-
             dim = selected_id is not None and selected_id != peer_id
 
-            self._draw_peer_card(canvas, px, py, peer, state, dim)
-            self._draw_belt(canvas, cx, cy, px, py, state, dim)
-
-    def render_bus(
-        self,
-        *,
-        canvas: CharCanvas,
-        branches: list[BusBranch],
-        belt_states: dict[str, BeltState],
-        hub_peer: Peer,
-        peers_by_id: dict[str, Peer],
-        selected_id: str | None,
-    ) -> None:
-        trunk_y = canvas.height // 2
-
-        # Hub label at left edge.
-        name = hub_peer.host_name[:18] or "self"
-        canvas.write(0, trunk_y - 1, name, HUB_CARD_STYLE)
-        canvas.write(0, trunk_y, "▣═", HUB_CARD_STYLE)
-
-        if not branches:
-            return
-
-        # Trunk extent: from hub to the furthest branch.
-        max_x = max(b.x_offset for b in branches)
-        for x in range(2, min(canvas.width - 1, max_x + 1)):
-            canvas.set(x, trunk_y, "─", "")
-
-        # Branches.
-        for b in branches:
-            peer = peers_by_id.get(b.peer_id)
-            state = belt_states.get(b.peer_id)
-            if peer is None or state is None:
-                continue
-            dim = selected_id is not None and selected_id != b.peer_id
-
-            if b.side == "top":
-                py = max(0, trunk_y - 3)
-                self._draw_belt(canvas, b.x_offset, trunk_y, b.x_offset, py, state, dim)
-                self._draw_peer_card(canvas, b.x_offset, py - 1, peer, state, dim)
-            else:
-                py = min(canvas.height - 1, trunk_y + 3)
-                self._draw_belt(canvas, b.x_offset, trunk_y, b.x_offset, py, state, dim)
-                self._draw_peer_card(canvas, b.x_offset, py + 1, peer, state, dim)
-
-    def _draw_peer_card(
-        self,
-        canvas: CharCanvas,
-        x: int,
-        y: int,
-        peer: Peer,
-        state: BeltState,
-        dim: bool,
-    ) -> None:
-        name = peer.host_name[:14]
-        style = TIER_STYLE.get(state.in_tier, "")
-        if dim:
-            style = "dim " + style if style else DIM
-        canvas.write(x - len(name) // 2, y, name, style)
-        rate = f"↓{self._compact_rate(state.rx_bps)} ↑{self._compact_rate(state.tx_bps)}"
-        rate_style = "dim " + DIM if dim else DIM
-        canvas.write(x - len(rate) // 2, y + 1, rate, rate_style)
-
-    def _compact_rate(self, bps: float) -> str:
-        """Compact rate string: '0', '95K', '1.2M', '25.8M'."""
-        if bps < 1000:
-            return f"{int(bps)}"
-        if bps < 1_000_000:
-            return f"{int(bps / 1000)}K"
-        return f"{bps / 1_000_000:.1f}M"
-
-    def _draw_belt(
-        self,
-        canvas: CharCanvas,
-        x0: int,
-        y0: int,
-        x1: int,
-        y1: int,
-        state: BeltState,
-        dim: bool,
-    ) -> None:
-        lane_style = LANE_STYLE.get(state.conn_type, "")
-        if dim:
-            lane_style = "dim " + lane_style if lane_style else DIM
-
-        if abs(x1 - x0) >= abs(y1 - y0):
-            glyph = LANE_HORIZONTAL.get(state.conn_type, "─")
-            step = 1 if x1 > x0 else -1
-            for x in range(x0 + step, x1, step):
-                canvas.set(x, y0, glyph, lane_style)
-            self._draw_tread_h(canvas, x0, x1, y0, state, dim)
-        else:
-            glyph = LANE_VERTICAL.get(state.conn_type, "│")
-            step = 1 if y1 > y0 else -1
-            for y in range(y0 + step, y1, step):
-                canvas.set(x0, y, glyph, lane_style)
-            self._draw_tread_v(canvas, y0, y1, x0, state, dim)
-
-    def _draw_tread_v(
-        self,
-        canvas: CharCanvas,
-        y0: int,
-        y1: int,
-        x: int,
-        state: BeltState,
-        dim: bool,
-    ) -> None:
-        length = abs(y1 - y0) - 1
-        if length <= 0:
-            return
-        going_up = y1 < y0
-        in_arrow = "down" if going_up else "up"
-        out_arrow = "up" if going_up else "down"
-        in_style = TIER_STYLE.get(state.in_tier, "")
-        out_style = TIER_STYLE.get(state.out_tier, "")
-        if dim:
-            in_style = "dim " + in_style if in_style else DIM
-            out_style = "dim " + out_style if out_style else DIM
-        # Lane cells live at min(y0,y1)+1 .. min(y0,y1)+length; tread head sits inside.
-        base_y = min(y0, y1) + 1
-        in_y = base_y + int(state.in_lane.position) % length
-        out_y = base_y + int(state.out_lane.position) % length
-        canvas.set(x, in_y, TREAD_GLYPH[in_arrow], in_style)
-        canvas.set(x, out_y, TREAD_GLYPH[out_arrow], out_style)
-
-    def _draw_tread_h(
-        self,
-        canvas: CharCanvas,
-        x0: int,
-        x1: int,
-        y: int,
-        state: BeltState,
-        dim: bool,
-    ) -> None:
-        length = abs(x1 - x0) - 1
-        if length <= 0:
-            return
-        going_right = x1 > x0
-        in_arrow = "left" if going_right else "right"
-        out_arrow = "right" if going_right else "left"
-        in_style = TIER_STYLE.get(state.in_tier, "")
-        out_style = TIER_STYLE.get(state.out_tier, "")
-        if dim:
-            in_style = "dim " + in_style if in_style else DIM
-            out_style = "dim " + out_style if out_style else DIM
-        base_x = min(x0, x1) + 1
-        in_x = base_x + int(state.in_lane.position) % length
-        out_x = base_x + int(state.out_lane.position) % length
-        canvas.set(in_x, y, TREAD_GLYPH[in_arrow], in_style)
-        canvas.set(out_x, y, TREAD_GLYPH[out_arrow], out_style)
+            if slot == "N":
+                pcx = cx
+                pcy = max(0, hub_top - 5 - self.PEER_CARD_H)
+                self._draw_peer_card(canvas, pcx, pcy, peer, state, dim)
+                # vertical belt from peer card bottom to hub top
+                lane_top = pcy + self.PEER_CARD_H
+                lane_bot = hub_top - 1
+                if lane_bot >= lane_top:
+                    self._draw_vlane(canvas, pcx - 1, lane_top, lane_bot,
+                                     going_up=False, phase=state.in_lane.phase, tier=state.in_tier, dim=dim)
+                    self._draw_vlane(canvas, pcx, lane_top, lane_bot,
+                                     going_up=True, phase=state.out_lane.phase, tier=state.out_tier, dim=dim)
+            elif slot == "S":
+                pcx = cx
+                pcy = min(canvas.height - self.PEER_CARD_H, hub_top + self.HUB_CARD_H + 5)
+                self._draw_peer_card(canvas, pcx, pcy, peer, state, dim)
+                lane_top = hub_top + self.HUB_CARD_H
+                lane_bot = pcy - 1
+                if lane_bot >= lane_top:
+                    self._draw_vlane(canvas, pcx - 1, lane_top, lane_bot,
+                                     going_up=True, phase=state.in_lane.phase, tier=state.in_tier, dim=dim)
+                    self._draw_vlane(canvas, pcx, lane_top, lane_bot,
+                                     going_up=False, phase=state.out_lane.phase, tier=state.out_tier, dim=dim)
+            elif slot == "E":
+                pcx = min(canvas.width - self.PEER_CARD_W // 2 - 1, hub_left + self.HUB_CARD_W + self.PEER_CARD_W // 2 + 5)
+                pcy = hub_top + 1
+                self._draw_peer_card(canvas, pcx, pcy, peer, state, dim)
+                lane_left = hub_left + self.HUB_CARD_W
+                lane_right = pcx - self.PEER_CARD_W // 2 - 1
+                if lane_right >= lane_left:
+                    self._draw_hlane(canvas, hub_top + self.HUB_CARD_H // 2 - 1, lane_left, lane_right,
+                                     going_left=True, phase=state.in_lane.phase, tier=state.in_tier, dim=dim)
+                    self._draw_hlane(canvas, hub_top + self.HUB_CARD_H // 2, lane_left, lane_right,
+                                     going_left=False, phase=state.out_lane.phase, tier=state.out_tier, dim=dim)
+            elif slot == "W":
+                pcx = max(self.PEER_CARD_W // 2, hub_left - self.PEER_CARD_W // 2 - 5)
+                pcy = hub_top + 1
+                self._draw_peer_card(canvas, pcx, pcy, peer, state, dim)
+                lane_left = pcx + self.PEER_CARD_W // 2 + 1
+                lane_right = hub_left - 1
+                if lane_right >= lane_left:
+                    self._draw_hlane(canvas, hub_top + self.HUB_CARD_H // 2 - 1, lane_left, lane_right,
+                                     going_left=False, phase=state.in_lane.phase, tier=state.in_tier, dim=dim)
+                    self._draw_hlane(canvas, hub_top + self.HUB_CARD_H // 2, lane_left, lane_right,
+                                     going_left=True, phase=state.out_lane.phase, tier=state.out_tier, dim=dim)
+            # Diagonal slots (NE/NW/SE/SW) — omit for v1; only top 4 cardinals get rendered.
 
 
 # Animation tick at ~10 Hz.
@@ -548,18 +659,14 @@ class BeltView(Widget):
         now = time.monotonic()
         dt = (now - self._last_tick) if self._last_tick is not None else _ANIMATION_INTERVAL
         self._last_tick = now
-        # Logical lane length: matches the arm length used in render_hub
-        # (cells from hub center to peer card minus the two endpoint cells).
-        arm = max(self.size.width, self.size.height) // 6
-        length = max(2, arm - 1)
         for state in self.belt_states.values():
-            state.in_lane.advance(dt=dt, length=length)
-            state.out_lane.advance(dt=dt, length=length)
+            state.in_lane.advance(dt=dt)
+            state.out_lane.advance(dt=dt)
         self.refresh()
 
     def render(self):
-        width = max(self.size.width, 40)
-        height = max(self.size.height, 12)
+        width = max(self.size.width, 80)
+        height = max(self.size.height, 24)
         canvas = CharCanvas(width=width, height=height)
 
         if self.hub_peer is None:
@@ -592,6 +699,8 @@ class BeltView(Widget):
                 hub_peer=self.hub_peer,
                 peers_by_id=self.peers_by_id,
                 selected_id=self.selected_id,
+                aggregate_rx=self._aggregate_rx,
+                aggregate_tx=self._aggregate_tx,
             )
 
         return canvas.to_text()

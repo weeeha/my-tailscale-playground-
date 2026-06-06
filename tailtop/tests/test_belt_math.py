@@ -51,23 +51,23 @@ from tailtop.widgets.belt import LaneState  # noqa: E402
 
 def test_lane_state_defaults() -> None:
     s = LaneState()
-    assert s.position == 0.0
+    assert s.phase == 0.0
     assert s.cells_per_second == 0.0
 
 
 def test_lane_state_advances_by_speed_times_dt() -> None:
-    s = LaneState(cells_per_second=4.0, position=0.0)
-    s.advance(dt=0.5, length=20)
-    assert s.position == pytest.approx(2.0)
+    s = LaneState(cells_per_second=1.0, phase=0.0)
+    s.advance(dt=0.5)
+    assert s.phase == pytest.approx(0.5)
 
 
-def test_lane_state_wraps_at_length() -> None:
-    s = LaneState(cells_per_second=10.0, position=9.0)
-    s.advance(dt=0.5, length=10)  # 9 + 5 = 14 → wrap to 4
-    assert s.position == pytest.approx(4.0)
+def test_lane_state_phase_wraps_at_spacing() -> None:
+    s = LaneState(cells_per_second=2.0, phase=0.5)
+    s.advance(dt=1.0)  # +2.0, total 2.5, wraps to 0.5
+    assert s.phase == pytest.approx(0.5)
 
 
 def test_lane_state_idle_does_not_move() -> None:
-    s = LaneState(cells_per_second=0.0, position=3.0)
-    s.advance(dt=10.0, length=20)
-    assert s.position == 3.0
+    s = LaneState(cells_per_second=0.0, phase=0.3)
+    s.advance(dt=10.0)
+    assert s.phase == 0.3
