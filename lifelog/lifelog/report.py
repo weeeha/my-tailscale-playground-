@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 from . import config as C
+from .sleep import analyze_main_sleep, render_card
 from .store import Store
 
 _RIBBON_SLOTS = 96       # 24h at 15-minute resolution
@@ -55,6 +56,11 @@ def render_day(store: Store, date: str | None = None) -> str:
     for activity, secs in totals.items():
         bar = "█" * int(round(40 * secs / total))
         lines.append(f"  {activity:<9} {_dur(secs)}  {bar}")
+
+    # sleep card (Phase 3): only when the night had a sleep session
+    sleep = analyze_main_sleep(store, date)
+    if sleep is not None:
+        lines += ["", render_card(sleep)]
 
     legend = "  ".join(f"{g}={a}" for a, g in C.GLYPH.items() if a != C.AWAY)
     lines += ["", f"legend: {legend}"]

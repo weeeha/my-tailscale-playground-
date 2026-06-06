@@ -112,6 +112,23 @@ class Store:
             for r in cur
         ]
 
+    def breathing_between(self, lo: float, hi: float) -> list[float]:
+        """Breathing-rate readings (bpm) in [lo, hi) — for sleep analytics."""
+        cur = self.db.execute(
+            "SELECT features_json FROM sensor_event "
+            "WHERE kind='breathing' AND ts >= ? AND ts < ? ORDER BY ts",
+            (lo, hi),
+        )
+        return [json.loads(r["features_json"]).get("bpm", 0.0) for r in cur]
+
+    def motion_samples_between(self, lo: float, hi: float) -> list[float]:
+        """Fused motion values in [lo, hi) — for the restlessness index."""
+        cur = self.db.execute(
+            "SELECT motion FROM state_sample WHERE ts >= ? AND ts < ? ORDER BY ts",
+            (lo, hi),
+        )
+        return [r["motion"] for r in cur]
+
     def activity_totals(self, date: str | None = None) -> dict[str, float]:
         """Activity → total seconds for a day. The 'where did my time go' query."""
         if date is None:

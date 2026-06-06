@@ -7,10 +7,11 @@ truth, which the tests use to score fusion accuracy.
 
 from __future__ import annotations
 
+import math
 import random
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from . import config as C
 from .model import KIND_BREATHING, KIND_CONTEXT, KIND_MOTION, SensorEvent
@@ -69,16 +70,21 @@ def generate(date: str | None = None, step_s: int = 30, seed: int = 7) -> Iterat
         end = t0 + scene.end_min * 60
 
         while t < end:
-            jitter = rng.uniform(-0.03, 0.05)
-            motion = max(0.0, base_motion + jitter)
-            yield SensorEvent(t, node, KIND_MOTION, {"motion": round(motion, 3)})
+            # while asleep, the occasional stir reads as a brief motion spike
+            restless = scene.truth == C.SLEEPING and rng.random() < 0.006
+            if restless:
+                motion = round(rng.uniform(0.18, 0.28), 3)
+            else:
+                motion = round(max(0.0, base_motion + rng.uniform(-0.03, 0.05)), 3)
+            yield SensorEvent(t, node, KIND_MOTION, {"motion": motion})
 
             # device-state pollers re-assert latched context every cycle
             for key, on in _scene_context(scene):
                 yield SensorEvent(t, "ctx", KIND_CONTEXT, {"key": key, "value": on})
 
-            if scene.truth == C.SLEEPING:
-                bpm = round(rng.uniform(13.0, 16.0), 1)
+            # clean breathing rhythm only while genuinely still
+            if scene.truth == C.SLEEPING and not restless:
+                bpm = round(rng.uniform(13.5, 15.5), 1)
                 yield SensorEvent(t, node, KIND_BREATHING, {"bpm": bpm, "confidence": 0.8})
 
             # fridge pulses a few times during cooking
@@ -91,6 +97,31 @@ def generate(date: str | None = None, step_s: int = 30, seed: int = 7) -> Iterat
 
         for key, _ in _scene_context(scene):
             yield SensorEvent(end, "ctx", KIND_CONTEXT, {"key": key, "value": False})
+
+
+def synth_respiration(
+    bpm: float,
+    duration_s: float,
+    fs: float = 10.0,
+    noise: float = 0.15,
+    present: bool = True,
+    seed: int = 0,
+) -> list[float]:
+    """A respiration waveform: a breathing-rate sinusoid + measurement noise.
+
+    Stands in for CSI amplitude on a stable subcarrier so ``breathing.estimate_rate``
+    can be exercised without hardware. ``present=False`` returns noise only
+    (empty bed) so the analyzer's "no rhythm" path is testable too.
+    """
+    rng = random.Random(seed)
+    n = int(duration_s * fs)
+    f = bpm / 60.0
+    out = []
+    for i in range(n):
+        t = i / fs
+        chest = math.sin(2 * math.pi * f * t) if present else 0.0
+        out.append(chest + rng.gauss(0.0, noise))
+    return out
 
 
 def _scene_context(scene: Scene) -> list[tuple[str, bool]]:
