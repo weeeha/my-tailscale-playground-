@@ -134,8 +134,10 @@ def test_render_bus_draws_hub_at_left_edge() -> None:
         peers_by_id={"hub": hub},
         selected_id=None,
     )
-    first_line = canvas.to_plain().splitlines()[canvas.height // 2]
-    assert "hub" in first_line[:10]
+    hub_line = canvas.to_plain().splitlines()[canvas.height // 2 - 1]
+    trunk_line = canvas.to_plain().splitlines()[canvas.height // 2]
+    assert "hub" in hub_line[:10]
+    assert trunk_line[:2] == "▣═"
 
 
 def test_render_bus_paints_trunk_across_canvas() -> None:

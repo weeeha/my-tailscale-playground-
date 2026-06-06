@@ -302,8 +302,8 @@ class BeltRenderer:
 
         # Hub label at left edge.
         name = hub_peer.host_name[:18] or "self"
-        canvas.write(0, trunk_y, name, HUB_CARD_STYLE)
-        canvas.write(len(name), trunk_y, "═", HUB_CARD_STYLE)
+        canvas.write(0, trunk_y - 1, name, HUB_CARD_STYLE)
+        canvas.write(0, trunk_y, "▣═", HUB_CARD_STYLE)
 
         if not branches:
             return
