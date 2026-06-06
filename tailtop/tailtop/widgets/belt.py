@@ -566,3 +566,53 @@ class BeltView(Widget):
             )
 
         return canvas.to_text()
+
+
+if __name__ == "__main__":
+    import json
+    import time
+    from pathlib import Path
+
+    from textual.app import App, ComposeResult
+
+    from tailtop.data.models import Status
+    from tailtop.state import RateHistory
+
+
+    class _BeltDemo(App):
+        CSS = "BeltView { width: 1fr; height: 1fr; background: #0d0d12; }"
+        BINDINGS = [("q", "quit", "Quit"), ("space", "step", "Bump rates")]
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.belt = BeltView()
+            self.rates = RateHistory()
+            fixture = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "status.json"
+            self.status = Status.from_json(json.loads(fixture.read_text()))
+            self._t = 0.0
+
+        def compose(self) -> ComposeResult:
+            yield self.belt
+
+        def on_mount(self) -> None:
+            self._push()
+            self.set_interval(2.0, self._push)
+
+        def _push(self) -> None:
+            now = time.monotonic()
+            for peer in self.status.peers:
+                # Synthesise a slowly-rising counter so RateHistory sees motion.
+                self.rates.update(
+                    peer.id,
+                    peer.rx_bytes + int(self._t * 500_000),
+                    peer.tx_bytes + int(self._t * 200_000),
+                    now=now,
+                )
+            self._t += 1
+            self.belt.update_data(self.status, self.rates, now=now)
+
+        def action_step(self) -> None:
+            self._push()
+
+
+    _BeltDemo().run()
