@@ -30,7 +30,7 @@ class FakeClient:
 
 async def test_poller_populates_app() -> None:
     status = Status.from_json(json.loads(FIXTURE.read_text()))
-    app = TailtopApp(client=FakeClient(status), auto_poll=True, enable_boot=False)
+    app = TailtopApp(client=FakeClient(status), auto_poll=True, splash=False, enable_boot=False)
     async with app.run_test() as pilot:
         # give the poller a couple of ticks to deliver the first status
         for _ in range(5):

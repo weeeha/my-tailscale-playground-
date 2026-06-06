@@ -8,7 +8,10 @@ and report back via modal screens or notifications.
 
 from __future__ import annotations
 
+import argparse
+import os
 import subprocess
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -36,6 +39,7 @@ from tailtop.modes.comfort import ComfortMode
 from tailtop.modes.observatory import ObservatoryMode
 from tailtop.screens import ConfirmScreen, InputScreen, ResultScreen
 from tailtop.state import RateHistory
+from tailtop.widgets.splash import SplashScreen
 from tailtop.widgets.status_bar import StatusBar
 
 _THEMES = Path(__file__).parent / "themes"
@@ -76,15 +80,23 @@ class TailtopApp(App):
         self,
         client: TailscaleClient | None = None,
         auto_poll: bool = True,
+        splash: bool | None = None,
         enable_boot: bool | None = None,
     ) -> None:
         super().__init__()
         self.client = client or TailscaleClient()
         self.rates = RateHistory()
         self.auto_poll = auto_poll
-        # Boot animation defaults on for normal runs, off when auto_poll is off (tests).
-        self.enable_boot = auto_poll if enable_boot is None else enable_boot
         self.poller = Poller(self.client, self._on_status, self._on_error, interval=2.0)
+        # Rainbow pixel splash defaults on when polling is on.
+        self._splash_enabled = auto_poll if splash is None else splash
+        self._splash: SplashScreen | None = None
+        # TTE beams/print boot defaults OFF when splash is enabled (avoid double-boot).
+        # Pass enable_boot=True to opt in alongside (or instead of) the pixel splash.
+        if enable_boot is None:
+            self.enable_boot = auto_poll and not self._splash_enabled
+        else:
+            self.enable_boot = enable_boot
 
     def compose(self) -> ComposeResult:
         with ContentSwitcher(initial="comfort", id="modes"):
@@ -95,7 +107,18 @@ class TailtopApp(App):
 
     def on_mount(self) -> None:
         self._refresh_status_bar()
+        # Mode-mount-beams flags must be set BEFORE pushing any boot screens,
+        # otherwise query_one("#comfort", ...) traverses the splash and fails.
+        if not self.enable_boot:
+            for mode_id in self.MODE_ORDER:
+                self.query_one(f"#{mode_id}", ModeView).mark_first_visit_done()
+        if self._splash_enabled:
+            self._splash = SplashScreen()
+            self.push_screen(self._splash)
+            self.set_timer(3.5, self._dismiss_splash)
         if not self.client.available:
+            if self._splash is not None:
+                self._splash.set_message("tailscale CLI not found")
             self.notify(
                 "tailscale CLI not found on PATH — install it or start tailscaled.",
                 title="tailtop",
@@ -109,10 +132,6 @@ class TailtopApp(App):
             self.push_screen(BootOverlay())
             # Boot handles Comfort's first-visit visual.
             self._mode_widget().mark_first_visit_done()
-        else:
-            # No animations at all when boot is off (test environments).
-            for mode_id in self.MODE_ORDER:
-                self.query_one(f"#{mode_id}", ModeView).mark_first_visit_done()
 
     # ---- data plumbing -----------------------------------------------------
 
@@ -121,7 +140,17 @@ class TailtopApp(App):
         for p in (status.self_peer, *status.peers):
             self.rates.update(p.id, p.rx_bytes, p.tx_bytes, now)
         self.error = ""
+        # Dismiss before triggering watch_status so the mode widgets on the
+        # base screen are queryable (the splash hides them otherwise).
+        self._dismiss_splash()
         self.status = status  # triggers watch_status
+
+    def _dismiss_splash(self) -> None:
+        splash = self._splash
+        if splash is None:
+            return
+        self._splash = None
+        splash.safe_dismiss()
 
     def _on_error(self, exc: Exception) -> None:
         self.error = self._friendly_error(exc)
@@ -327,8 +356,22 @@ class TailtopApp(App):
         await self.poller.stop()
 
 
-def main() -> None:
-    TailtopApp().run()
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(prog="tailtop", description="htop for your tailnet")
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        default=os.environ.get("TAILTOP_DEMO") in ("1", "true", "yes"),
+        help="Run against a synthetic tech-company tailnet (no tailscaled needed).",
+    )
+    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+
+    client = None
+    if args.demo:
+        from tailtop.data.demo import DemoClient
+
+        client = DemoClient()
+    TailtopApp(client=client).run()
 
 
 if __name__ == "__main__":
