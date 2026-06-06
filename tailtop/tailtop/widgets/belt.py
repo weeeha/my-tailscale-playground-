@@ -11,7 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from tailtop.data.models import Peer
+from rich.text import Text
+
+from tailtop.data.models import ConnType, Peer
 
 
 @dataclass
@@ -157,3 +159,226 @@ class BusLayout:
                 )
             )
         return branches
+
+
+# ---- Glyphs ----
+
+LANE_VERTICAL = {
+    ConnType.DIRECT: "│",
+    ConnType.DERP: "╎",
+    ConnType.IDLE: "┊",
+}
+LANE_HORIZONTAL = {
+    ConnType.DIRECT: "─",
+    ConnType.DERP: "╌",
+    ConnType.IDLE: "┄",
+}
+TREAD_GLYPH = {
+    "up": "▲",
+    "down": "▼",
+    "left": "◀",
+    "right": "▶",
+}
+TIER_STYLE = {
+    "heavy": "bold #ffd166",
+    "busy":  "#7be39b",
+    "light": "#5b9bd5",
+    "idle":  "dim #6b6f78",
+}
+LANE_STYLE = {
+    ConnType.DIRECT: "#3a6dbb",
+    ConnType.DERP:   "#7a5fa3",
+    ConnType.IDLE:   "dim #6b6f78",
+}
+DIM = "dim"
+HUB_CARD_STYLE = "bold #8bb6ff"
+
+
+@dataclass
+class BeltState:
+    """Per-peer animation + tier state — driven by data poll + animation tick."""
+
+    peer_id: str
+    conn_type: ConnType
+    in_lane: LaneState
+    out_lane: LaneState
+    in_tier: str
+    out_tier: str
+
+
+class CharCanvas:
+    """2D grid of (char, style) cells, flushed to a Rich Text."""
+
+    def __init__(self, width: int, height: int) -> None:
+        self.width = width
+        self.height = height
+        self._chars: list[list[str]] = [[" "] * width for _ in range(height)]
+        self._styles: list[list[str]] = [[""] * width for _ in range(height)]
+
+    def set(self, x: int, y: int, char: str, style: str = "") -> None:
+        if 0 <= x < self.width and 0 <= y < self.height:
+            self._chars[y][x] = char
+            self._styles[y][x] = style
+
+    def write(self, x: int, y: int, text: str, style: str = "") -> None:
+        for i, ch in enumerate(text):
+            self.set(x + i, y, ch, style)
+
+    def to_plain(self) -> str:
+        return "\n".join("".join(row) for row in self._chars)
+
+    def to_text(self) -> Text:
+        out = Text()
+        for y in range(self.height):
+            for x in range(self.width):
+                out.append(self._chars[y][x], style=self._styles[y][x])
+            if y < self.height - 1:
+                out.append("\n")
+        return out
+
+
+# ---- Hub geometry ----
+
+_SLOT_DIRECTION: dict[str, tuple[int, int]] = {
+    "N":  (0, -1),
+    "S":  (0,  1),
+    "E":  (1,  0),
+    "W":  (-1, 0),
+    "NE": (1, -1),
+    "NW": (-1, -1),
+    "SE": (1,  1),
+    "SW": (-1, 1),
+}
+
+
+class BeltRenderer:
+    """Paints belts onto a CharCanvas. Pure: no Textual, no I/O."""
+
+    def render_hub(
+        self,
+        *,
+        canvas: CharCanvas,
+        layout: HubLayout,
+        belt_states: dict[str, BeltState],
+        hub_peer: Peer,
+        peers_by_id: dict[str, Peer],
+        selected_id: str | None,
+    ) -> None:
+        cx, cy = canvas.width // 2, canvas.height // 2
+
+        # Hub card at center (3 lines: name / aggregate / count).
+        name = hub_peer.host_name[:18] or "self"
+        canvas.write(cx - len(name) // 2, cy, name, HUB_CARD_STYLE)
+        canvas.write(cx - 4, cy + 1, "▣ base", DIM)
+
+        # For each assigned slot, draw the peer card + belt segment.
+        for peer_id, slot in layout._slot_of.items():
+            dx, dy = _SLOT_DIRECTION[slot]
+            peer = peers_by_id.get(peer_id)
+            state = belt_states.get(peer_id)
+            if peer is None or state is None:
+                continue
+
+            # Peer card position: ~6 cells out from hub along (dx, dy).
+            arm = max(canvas.width, canvas.height) // 6
+            px, py = cx + dx * arm, cy + dy * arm
+
+            dim = selected_id is not None and selected_id != peer_id
+
+            self._draw_peer_card(canvas, px, py, peer, state, dim)
+            self._draw_belt(canvas, cx, cy, px, py, state, dim)
+
+    def _draw_peer_card(
+        self,
+        canvas: CharCanvas,
+        x: int,
+        y: int,
+        peer: Peer,
+        state: BeltState,
+        dim: bool,
+    ) -> None:
+        name = peer.host_name[:14]
+        style = TIER_STYLE.get(state.in_tier, "")
+        if dim:
+            style = "dim " + style if style else DIM
+        canvas.write(x - len(name) // 2, y, name, style)
+
+    def _draw_belt(
+        self,
+        canvas: CharCanvas,
+        x0: int,
+        y0: int,
+        x1: int,
+        y1: int,
+        state: BeltState,
+        dim: bool,
+    ) -> None:
+        lane_style = LANE_STYLE.get(state.conn_type, "")
+        if dim:
+            lane_style = "dim " + lane_style if lane_style else DIM
+
+        if abs(x1 - x0) >= abs(y1 - y0):
+            glyph = LANE_HORIZONTAL.get(state.conn_type, "─")
+            step = 1 if x1 > x0 else -1
+            for x in range(x0 + step, x1, step):
+                canvas.set(x, y0, glyph, lane_style)
+            self._draw_tread_h(canvas, x0, x1, y0, state, dim)
+        else:
+            glyph = LANE_VERTICAL.get(state.conn_type, "│")
+            step = 1 if y1 > y0 else -1
+            for y in range(y0 + step, y1, step):
+                canvas.set(x0, y, glyph, lane_style)
+            self._draw_tread_v(canvas, y0, y1, x0, state, dim)
+
+    def _draw_tread_v(
+        self,
+        canvas: CharCanvas,
+        y0: int,
+        y1: int,
+        x: int,
+        state: BeltState,
+        dim: bool,
+    ) -> None:
+        length = abs(y1 - y0) - 1
+        if length <= 0:
+            return
+        going_up = y1 < y0
+        in_arrow = "down" if going_up else "up"
+        out_arrow = "up" if going_up else "down"
+        in_style = TIER_STYLE.get(state.in_tier, "")
+        out_style = TIER_STYLE.get(state.out_tier, "")
+        if dim:
+            in_style = "dim " + in_style if in_style else DIM
+            out_style = "dim " + out_style if out_style else DIM
+        # Lane cells live at min(y0,y1)+1 .. min(y0,y1)+length; tread head sits inside.
+        base_y = min(y0, y1) + 1
+        in_y = base_y + int(state.in_lane.position) % length
+        out_y = base_y + int(state.out_lane.position) % length
+        canvas.set(x, in_y, TREAD_GLYPH[in_arrow], in_style)
+        canvas.set(x, out_y, TREAD_GLYPH[out_arrow], out_style)
+
+    def _draw_tread_h(
+        self,
+        canvas: CharCanvas,
+        x0: int,
+        x1: int,
+        y: int,
+        state: BeltState,
+        dim: bool,
+    ) -> None:
+        length = abs(x1 - x0) - 1
+        if length <= 0:
+            return
+        going_right = x1 > x0
+        in_arrow = "left" if going_right else "right"
+        out_arrow = "right" if going_right else "left"
+        in_style = TIER_STYLE.get(state.in_tier, "")
+        out_style = TIER_STYLE.get(state.out_tier, "")
+        if dim:
+            in_style = "dim " + in_style if in_style else DIM
+            out_style = "dim " + out_style if out_style else DIM
+        base_x = min(x0, x1) + 1
+        in_x = base_x + int(state.in_lane.position) % length
+        out_x = base_x + int(state.out_lane.position) % length
+        canvas.set(in_x, y, TREAD_GLYPH[in_arrow], in_style)
+        canvas.set(out_x, y, TREAD_GLYPH[out_arrow], out_style)
