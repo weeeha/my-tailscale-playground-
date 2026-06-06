@@ -8,6 +8,22 @@ See docs/superpowers/specs/2026-06-06-tailtop-belt-view-spec.md.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+
+@dataclass
+class LaneState:
+    """One direction of a belt: tread speed and current head position."""
+
+    cells_per_second: float = 0.0
+    position: float = 0.0
+
+    def advance(self, dt: float, length: int) -> None:
+        """Move the tread head forward by ``cells_per_second * dt``, wrapping at length."""
+        if self.cells_per_second <= 0 or length <= 0:
+            return
+        self.position = (self.position + self.cells_per_second * dt) % length
+
 
 class TreadAnimator:
     """Pure math: rate → tread speed (cells/s) and intensity tier."""
