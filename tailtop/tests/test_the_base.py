@@ -9,7 +9,6 @@ from tailtop.modes.the_base import TheBaseMode
 from tailtop.state import RateHistory
 from tailtop.widgets.alert_strip import AlertStrip
 from tailtop.widgets.belt import BeltView
-from tailtop.widgets.detail_pane import DetailPane
 
 
 def _self() -> Peer:
@@ -96,3 +95,45 @@ async def test_tab_cycles_into_the_base() -> None:
                 break
             await pilot.press("tab")
         assert "the_base" in seen
+
+
+async def test_disconnected_state_shows_helpful_header() -> None:
+    from tailtop.app import TailtopApp
+
+    status = Status(
+        version="dev", backend_state="NeedsLogin", tailscale_ips=[],
+        magic_dns_suffix="", user_display="",
+        self_peer=_self(), peers=[],
+    )
+    app = TailtopApp(auto_poll=False)
+    async with app.run_test() as pilot:
+        for _ in range(4):
+            if app.active_mode == "the_base":
+                break
+            await pilot.press("tab")
+        rates = RateHistory()
+        mode = pilot.app.query_one(TheBaseMode)
+        mode.update_data(status, rates)
+        strip = pilot.app.query_one(AlertStrip)
+        plain = strip.renderable.plain if hasattr(strip.renderable, "plain") else str(strip.renderable)
+        assert "NeedsLogin" in plain
+
+
+async def test_empty_tailnet_does_not_crash_or_select() -> None:
+    from tailtop.app import TailtopApp
+
+    status = Status(
+        version="dev", backend_state="Running", tailscale_ips=["100.64.0.1"],
+        magic_dns_suffix="example.ts.net", user_display="me",
+        self_peer=_self(), peers=[],
+    )
+    app = TailtopApp(auto_poll=False)
+    async with app.run_test() as pilot:
+        for _ in range(4):
+            if app.active_mode == "the_base":
+                break
+            await pilot.press("tab")
+        rates = RateHistory()
+        mode = pilot.app.query_one(TheBaseMode)
+        mode.update_data(status, rates)
+        assert mode._selected_id is None
