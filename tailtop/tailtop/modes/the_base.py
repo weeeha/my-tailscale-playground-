@@ -66,7 +66,7 @@ class TheBaseMode(ModeView):
         self.query_one("#tb-header", Static).update(header)
 
         # Alert strip.
-        self.query_one(AlertStrip).set_status(status)
+        self.query_one(AlertStrip).set_status(status, getattr(self.app, "vitals", None))
 
         # Seed selection from app-level state if not yet chosen locally.
         if self._selected_id is None and hasattr(self.app, "selected_peer_id") and self.app.selected_peer_id:

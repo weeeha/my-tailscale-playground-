@@ -1,8 +1,9 @@
 """AlertStrip — a one-line summary of tailnet anomalies for TheBaseMode.
 
-Computes offline peer count, peers with keys expiring within 7 days, and any
-non-Running backend state. Pure ``summarise_alerts(status)`` is unit-tested
-without Textual; the widget is a thin Static wrapper.
+Computes offline peer count, peers with keys expiring within 7 days, any
+non-Running backend state, and fleet hardware-health warnings from vitals.
+Pure ``summarise_alerts(status, vitals_by_id)`` is unit-tested without
+Textual; the widget is a thin Static wrapper.
 """
 
 from __future__ import annotations
@@ -13,11 +14,15 @@ from rich.text import Text
 from textual.widgets import Static
 
 from tailtop.data.models import Status
+from tailtop.data.vitals import Vitals, summarise_health
 
 _EXPIRY_WARNING_DAYS = 7
 
 
-def summarise_alerts(status: Status) -> str:
+def summarise_alerts(
+    status: Status,
+    vitals_by_id: dict[str, Vitals] | None = None,
+) -> str:
     """Return a single-line summary; empty string when nothing's wrong."""
     parts: list[str] = []
 
@@ -39,14 +44,23 @@ def summarise_alerts(status: Status) -> str:
     if expiring:
         parts.append(f"{expiring} key expiring soon")
 
+    if vitals_by_id:
+        health = summarise_health(vitals_by_id)
+        if health:
+            parts.append(health)
+
     return " · ".join(parts)
 
 
 class AlertStrip(Static):
     """Thin Textual wrapper around summarise_alerts."""
 
-    def set_status(self, status: Status) -> None:
-        text = summarise_alerts(status)
+    def set_status(
+        self,
+        status: Status,
+        vitals_by_id: dict[str, Vitals] | None = None,
+    ) -> None:
+        text = summarise_alerts(status, vitals_by_id)
         if not text:
             self.update(Text("", style="dim"))
         else:

@@ -70,3 +70,13 @@ def test_alert_strip_widget_instantiates_and_updates() -> None:
     rendered = strip.render()
     plain = rendered.plain if hasattr(rendered, "plain") else str(rendered)
     assert "1 offline" in plain
+
+
+def test_summarise_alerts_includes_health() -> None:
+    from tailtop.data.vitals import Vitals
+    from tailtop.widgets.alert_strip import summarise_alerts
+
+    status = _status([])
+    vbi = {"p1": Vitals(host="fastclock", soc_temp_c=85.0)}
+    out = summarise_alerts(status, vbi)
+    assert "fastclock" in out
