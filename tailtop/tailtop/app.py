@@ -389,13 +389,29 @@ class TailtopApp(App):
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="tailtop", description="htop for your tailnet")
+    parser.add_argument("command", nargs="?", choices=["fleet"], help="one-shot subcommand")
     parser.add_argument(
         "--demo",
         action="store_true",
         default=os.environ.get("TAILTOP_DEMO") in ("1", "true", "yes"),
-        help="Run against a synthetic tech-company tailnet (no tailscaled needed).",
+        help="Run against a synthetic tailnet (no tailscaled needed).",
     )
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+
+    if args.command == "fleet":
+        import asyncio
+
+        from tailtop.data.vitals_poller import VitalsPoller
+        from tailtop.fleet_report import render_fleet
+
+        async def _run() -> int:
+            poller = VitalsPoller(TailscaleClient())
+            vitals = await poller.collect_round()
+            text, code = render_fleet(vitals)
+            print(text)
+            return code
+
+        sys.exit(asyncio.run(_run()))
 
     client = None
     if args.demo:
