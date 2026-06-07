@@ -9,9 +9,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
+from pathlib import Path
 
 from tailtop.data.models import Status
+from tailtop.data.vitals import Vitals
+
+_AGENT_SCRIPT = Path(__file__).parents[2] / "agent" / "fleet_collect.sh"
+
+
+def ssh_user_for(host: str, user_map: dict[str, str], default: str = "") -> str:
+    """Resolve the SSH login user for a Pi host (explicit map wins)."""
+    return user_map.get(host, default)
 
 
 class TailscaleError(Exception):
@@ -94,3 +104,31 @@ class TailscaleClient:
     async def ping_once(self, host: str) -> str:
         """One ping; stdout carries 'via DERP(region)' or 'direct ... in Nms'."""
         return await self.run("ping", "--c", "1", "--timeout", "3s", host, timeout=6.0, check=False)
+
+    async def _ssh_collect(self, host: str, user: str) -> str:
+        """Run the collect script on `host` over SSH (key-based), return stdout."""
+        dest = f"{user}@{host}" if user else host
+        key = os.path.expanduser("~/.ssh/id_ed25519")
+        script = _AGENT_SCRIPT.read_bytes()
+        proc = await asyncio.create_subprocess_exec(
+            "ssh", "-i", key, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "ConnectTimeout=8", dest, "sh", "-s",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(script), timeout=12.0)
+        except asyncio.TimeoutError as exc:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            raise TailscaleTimeout(f"collect {host}") from exc
+        if proc.returncode != 0:
+            raise TailscaleError(["ssh", dest], proc.returncode or -1, err.decode("utf-8", "replace"))
+        return out.decode("utf-8", "replace")
+
+    async def collect_vitals(self, host: str, user_map: dict[str, str]) -> Vitals | None:
+        """Collect + parse vitals for one Pi host. Returns None on failure."""
+        user = ssh_user_for(host, user_map)
+        raw = await self._ssh_collect(host, user)
+        return Vitals.from_collect_json(json.loads(raw))
