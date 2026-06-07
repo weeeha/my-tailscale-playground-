@@ -85,4 +85,5 @@ class ComfortMode(ModeView):
             app.rates,
             app.latency,
             getattr(app, "netcheck_self", None),
+            getattr(app, "vitals", {}).get(self._selected_peer.id),
         )

@@ -20,6 +20,7 @@ from textual.widgets import Static
 from tailtop.data.latency import LatencyProbe
 from tailtop.data.models import ConnType, Peer
 from tailtop.data.netcheck import NetCheck
+from tailtop.data.vitals import Vitals
 from tailtop.state import RateHistory, human_rate, sparkline
 from tailtop.widgets.charts import LatencyChart
 
@@ -77,6 +78,8 @@ class DeviceDetail(Vertical):
                 yield Static(id="panel-status", classes="dpanel")
                 yield Static(id="panel-network", classes="dpanel")
                 yield Static(id="panel-exit", classes="dpanel")
+                yield Static(id="panel-vitals", classes="dpanel")
+                yield Static(id="panel-hardware", classes="dpanel")
             with Vertical(id="detail-charts"):
                 yield LatencyChart(id="latency-chart")
                 yield Static(id="panel-throughput", classes="dpanel")
@@ -85,7 +88,9 @@ class DeviceDetail(Vertical):
 
     def show_empty(self, message: str = "Select a device") -> None:
         self.query_one("#detail-title", Static).update(Text(message, style="dim"))
-        for pid in ("#panel-status", "#panel-network", "#panel-exit", "#panel-throughput", "#panel-quality"):
+        for pid in ("#panel-status", "#panel-network", "#panel-exit",
+                    "#panel-vitals", "#panel-hardware",
+                    "#panel-throughput", "#panel-quality"):
             self.query_one(pid, Static).update("")
             self.query_one(pid, Static).display = False
         self.query_one("#latency-chart", LatencyChart).display = False
@@ -97,6 +102,7 @@ class DeviceDetail(Vertical):
         rates: RateHistory,
         probe: LatencyProbe,
         netcheck: NetCheck | None = None,
+        vitals: Vitals | None = None,
     ) -> None:
         color = _CONN_COLOR.get(peer.conn_type, "white")
 
@@ -167,6 +173,9 @@ class DeviceDetail(Vertical):
         # Connection quality (+ netcheck when self)
         self._quality_panel(peer, netcheck)
 
+        # Vitals + hardware panels (only when vitals are present)
+        self._vitals_panels(vitals)
+
         self.query_one("#detail-actions", Static).display = True
 
     # ---- helpers -----------------------------------------------------------
@@ -184,6 +193,46 @@ class DeviceDetail(Vertical):
         if last is None:
             return "Latency · ping RTT"
         return f"Latency · {last:.0f} ms · {via or peer.relay_label}"
+
+    def _vitals_panels(self, vitals: Vitals | None) -> None:
+        vp = self.query_one("#panel-vitals", Static)
+        hp = self.query_one("#panel-hardware", Static)
+        if vitals is None:
+            vp.display = False
+            hp.display = False
+            return
+        color = {"ok": "#7be39b", "warn": "#f0c674", "crit": "#ff7878"}[vitals.health_level]
+        temp = f"{vitals.soc_temp_c:.0f}°C" if vitals.soc_temp_c is not None else "—"
+        flags = []
+        if vitals.throttled_now:
+            flags.append("throttled")
+        if vitals.under_voltage_now:
+            flags.append("under-voltage")
+        self._panel("#panel-vitals", "Vitals", color, _kv([
+            ("Temp", Text(temp, style=color)),
+            ("Flags", ", ".join(flags) if flags else Text("none", style="#6b6f78")),
+            ("Load", f"{vitals.load1:.2f}"),
+            ("CPU", f"{vitals.cpu_pct:.0f}%"),
+            ("Memory", f"{vitals.mem_pct:.0f}%"),
+            ("Disk", Text(f"{vitals.disk_used_pct:.0f}% used · {vitals.disk_free_gb:.1f} GB free", style=color)),
+            ("Uptime", f"{vitals.uptime_s // 86400}d {vitals.uptime_s % 86400 // 3600}h"),
+        ]))
+        displays = "\n".join(f"{d.connector} {d.mode}".strip() for d in vitals.displays) or "—"
+        battery = (
+            f"{vitals.battery_pct:.0f}%"
+            if vitals.battery_present and vitals.battery_pct is not None
+            else ("present" if vitals.battery_present else "—")
+        )
+        app = "—"
+        if vitals.app_name:
+            app = f"{vitals.app_name}: " + ("running" if vitals.app_running else "DOWN")
+        self._panel("#panel-hardware", "Hardware", "#8bb6ff", _kv([
+            ("Model", vitals.model or "—"),
+            ("Displays", displays),
+            ("USB", str(vitals.usb_count)),
+            ("Battery", battery),
+            ("App", Text(app, style="#ff7878" if vitals.app_running is False else "white")),
+        ]))
 
     def _quality_panel(self, peer: Peer, netcheck: NetCheck | None) -> None:
         rows: list[tuple[str, object]] = [("Path", Text(peer.relay_label))]

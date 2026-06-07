@@ -85,7 +85,9 @@ class TheBaseMode(ModeView):
             peer = next((p for p in status.peers if p.id == self._selected_id), None)
             if peer is not None:
                 self.query_one(DeviceDetail).update_peer(
-                    peer, self.app.rates, self.app.latency, getattr(self.app, "netcheck_self", None)
+                    peer, self.app.rates, self.app.latency,
+                    getattr(self.app, "netcheck_self", None),
+                    getattr(self.app, "vitals", {}).get(peer.id),
                 )
             else:
                 self.query_one(DeviceDetail).show_empty("Selected peer is gone")
@@ -93,8 +95,10 @@ class TheBaseMode(ModeView):
     def _select(self, peer: Peer, status: Status) -> None:
         self._selected_id = peer.id
         self.query_one(DeviceDetail).update_peer(
-                    peer, self.app.rates, self.app.latency, getattr(self.app, "netcheck_self", None)
-                )
+            peer, self.app.rates, self.app.latency,
+            getattr(self.app, "netcheck_self", None),
+            getattr(self.app, "vitals", {}).get(peer.id),
+        )
         self.query_one(BeltView).set_selected(peer.id)
         if hasattr(self.app, "selected_peer_id"):
             self.app.selected_peer_id = peer.id
