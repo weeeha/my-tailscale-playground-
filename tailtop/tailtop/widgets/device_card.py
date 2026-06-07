@@ -47,7 +47,13 @@ class DeviceCard(Static):
         super().__init__("", classes="devcard")
         self._peer_id = peer_id
 
-    def update_card(self, peer: Peer, rates: RateHistory, vitals: Vitals | None = None) -> None:
+    def update_card(
+        self,
+        peer: Peer,
+        rates: RateHistory,
+        vitals: Vitals | None = None,
+        temp_series: list[float] | None = None,
+    ) -> None:
         color = _CONN_COLOR.get(peer.conn_type, "white")
         self.border_title = peer.name
         self.set_class(not peer.online, "offline")
@@ -80,4 +86,10 @@ class DeviceCard(Static):
         if vitals is not None:
             rows.append(Text(""))
             rows.append(vitals_badge(vitals))
+            if temp_series:
+                color_temp = _HEALTH_COLOR[vitals.health_level]
+                temp_line = Text()
+                temp_line.append("temp ", style="dim")
+                temp_line.append(sparkline(temp_series, width=12), style=color_temp)
+                rows.append(temp_line)
         self.update(Group(*rows))
