@@ -1,11 +1,18 @@
 """The only CLI-aware code in tailtop.
 
 ``TailscaleClient`` shells out to the ``tailscale`` binary for status, netcheck,
-ping, and whois calls. ``collect_vitals`` is the exception: it uses OpenSSH
-(key-based, ``~/.ssh/id_ed25519``) via ``ssh -i ... <user>@<host> 'sh -s'``
-because ``tailscale ssh`` requires an interactive browser re-auth on this machine;
-the ``tailscale`` daemon still provides reachability. Every call applies timeouts
-and normalizes failures into typed exceptions.
+ping, and whois calls. ``collect_vitals`` uses SSH to pipe the fleet_collect.sh
+agent script to a remote host. The transport is selected by ``self.ssh_transport``
+(default ``"tailscale"``; override to ``"openssh"`` via env var
+``TAILTOP_SSH_TRANSPORT=openssh``):
+
+- ``"tailscale"``: uses ``tailscale ssh <user>@<host> -- sh -s`` so that
+  MagicDNS resolution and Tailscale ACL auth are used — works off-LAN without
+  a ``.local`` entry and is the intended path for all Pi nodes.
+- ``"openssh"``: falls back to ``ssh -i ~/.ssh/id_ed25519 …`` (key-based) for
+  hosts reachable via normal SSH.
+
+Every call applies timeouts and normalizes failures into typed exceptions.
 """
 
 from __future__ import annotations
@@ -51,6 +58,7 @@ class TailscaleClient:
     def __init__(self, binary: str | None = None, default_timeout: float = 10.0) -> None:
         self._binary = binary or shutil.which("tailscale") or "tailscale"
         self.default_timeout = default_timeout
+        self.ssh_transport: str = os.environ.get("TAILTOP_SSH_TRANSPORT", "tailscale")
 
     @property
     def available(self) -> bool:
@@ -108,27 +116,54 @@ class TailscaleClient:
         """One ping; stdout carries 'via DERP(region)' or 'direct ... in Nms'."""
         return await self.run("ping", "--c", "1", "--timeout", "3s", host, timeout=6.0, check=False)
 
-    async def _ssh_collect(self, dest: str, user: str) -> str:
-        """Run the collect script on `dest` over SSH (key-based), return stdout."""
-        dest = f"{user}@{dest}" if user else dest
-        key = os.path.expanduser("~/.ssh/id_ed25519")
-        script = _AGENT_SCRIPT.read_bytes()
+    async def _run_pipe(self, argv: list[str], stdin_bytes: bytes) -> str:
+        """Spawn *argv*, pipe *stdin_bytes* in, return stdout.
+
+        Raises ``TailscaleTimeout`` (20 s hard cap) or ``TailscaleError`` on
+        non-zero exit.  Used by both SSH transports.
+        """
         proc = await asyncio.create_subprocess_exec(
-            "ssh", "-i", key, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
-            "-o", "ConnectTimeout=8", dest, "sh", "-s",
-            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            *argv,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         try:
-            out, err = await asyncio.wait_for(proc.communicate(script), timeout=12.0)
+            out, err = await asyncio.wait_for(proc.communicate(stdin_bytes), timeout=20.0)
         except asyncio.TimeoutError as exc:
             try:
                 proc.kill()
             except ProcessLookupError:
                 pass
-            raise TailscaleTimeout(f"collect {dest}") from exc
+            raise TailscaleTimeout(f"collect {argv}") from exc
         if proc.returncode != 0:
-            raise TailscaleError(["ssh", dest], proc.returncode or -1, err.decode("utf-8", "replace"))
+            raise TailscaleError(argv, proc.returncode or -1, err.decode("utf-8", "replace"))
         return out.decode("utf-8", "replace")
+
+    async def _ssh_collect(self, dest: str, user: str) -> str:
+        """Run the collect script on *dest* over SSH, return stdout.
+
+        The transport (``tailscale ssh`` or ``openssh``) is chosen by
+        ``self.ssh_transport``.
+        """
+        target = f"{user}@{dest}" if user else dest
+        script_bytes = _AGENT_SCRIPT.read_bytes()
+
+        if self.ssh_transport == "tailscale":
+            argv: list[str] = [self._binary, "ssh", target, "--", "sh", "-s"]
+        else:
+            key = os.path.expanduser("~/.ssh/id_ed25519")
+            argv = [
+                "ssh",
+                "-i", key,
+                "-o", "BatchMode=yes",
+                "-o", "StrictHostKeyChecking=accept-new",
+                "-o", "ConnectTimeout=15",
+                target,
+                "sh", "-s",
+            ]
+
+        return await self._run_pipe(argv, script_bytes)
 
     async def collect_vitals(
         self,
@@ -138,11 +173,15 @@ class TailscaleClient:
     ) -> Vitals | None:
         """Collect + parse vitals for one Pi host. Returns None on failure.
 
-        ``addr_map`` maps hostname → Tailscale IP (or any reachable address).
-        When provided, the resolved address is used as the SSH target so the
-        call works off-LAN; the hostname is used only for user-map lookup.
+        For the ``tailscale`` transport, MagicDNS resolves the bare host name
+        so ``dest = host`` (addr_map is ignored).  For the ``openssh`` transport,
+        ``addr_map`` maps hostname → reachable address (Tailscale IP or LAN
+        address); falls back to bare hostname when the host is not in the map.
         """
         user = ssh_user_for(host, user_map)
-        dest = (addr_map or {}).get(host, host)  # prefer Tailscale IP, fall back to hostname
+        if self.ssh_transport == "tailscale":
+            dest = host  # MagicDNS handles resolution
+        else:
+            dest = (addr_map or {}).get(host, host)
         raw = await self._ssh_collect(dest, user)
         return Vitals.from_collect_json(json.loads(raw))
