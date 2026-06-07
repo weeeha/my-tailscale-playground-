@@ -7,6 +7,7 @@ from rich.text import Text
 from textual.widgets import Static
 
 from tailtop.data.models import ConnType, Peer
+from tailtop.data.vitals import Vitals
 from tailtop.state import RateHistory, human_rate, sparkline
 
 _SPARK_MAX = 32  # matches RateHistory.WIDTH; past this we're drawing empty dots
@@ -19,6 +20,25 @@ _CONN_COLOR = {
     ConnType.OFFLINE: "#6b6f78",
 }
 
+_HEALTH_COLOR = {"ok": "#7be39b", "warn": "#f0c674", "crit": "#ff7878"}
+
+
+def vitals_badge(v: Vitals | None) -> Text:
+    """One-line temp/cpu/mem/disk badge, colored by health. Empty when no vitals."""
+    if v is None:
+        return Text("")
+    color = _HEALTH_COLOR[v.health_level]
+    t = Text()
+    if v.soc_temp_c is not None:
+        t.append(f"{v.soc_temp_c:.0f}°C", style=color)
+        t.append("  ", style="dim")
+    if v.throttled_now or v.under_voltage_now:
+        t.append("⚡throttled  ", style="#ff7878")
+    t.append(f"cpu {v.cpu_pct:.0f}%  ", style="dim")
+    t.append(f"mem {v.mem_pct:.0f}%  ", style="dim")
+    t.append(f"disk {v.disk_used_pct:.0f}%", style=color)
+    return t
+
 
 class DeviceCard(Static):
     """One peer, rendered as a bordered tile. Updated in place each poll."""
@@ -27,7 +47,7 @@ class DeviceCard(Static):
         super().__init__("", classes="devcard")
         self._peer_id = peer_id
 
-    def update_card(self, peer: Peer, rates: RateHistory) -> None:
+    def update_card(self, peer: Peer, rates: RateHistory, vitals: Vitals | None = None) -> None:
         color = _CONN_COLOR.get(peer.conn_type, "white")
         self.border_title = peer.name
         self.set_class(not peer.online, "offline")
@@ -56,4 +76,8 @@ class DeviceCard(Static):
         tx.append(sparkline(rates.tx_series(peer.id), width=spark_w), style="#7be39b")
         tx.append(tx_label, style="dim")
 
-        self.update(Group(status_line, path_line, Text(""), rx, tx))
+        rows = [status_line, path_line, Text(""), rx, tx]
+        if vitals is not None:
+            rows.append(Text(""))
+            rows.append(vitals_badge(vitals))
+        self.update(Group(*rows))
