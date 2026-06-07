@@ -40,6 +40,7 @@ from tailtop.modes.comfort import ComfortMode
 from tailtop.modes.observatory import ObservatoryMode
 from tailtop.modes.the_base import TheBaseMode
 from tailtop.screens import ConfirmScreen, InputScreen, ResultScreen
+from tailtop.data.history import VitalsStore
 from tailtop.data.vitals import Vitals
 from tailtop.data.vitals_poller import VitalsPoller
 from tailtop.state import RateHistory, VitalsHistory
@@ -96,6 +97,7 @@ class TailtopApp(App):
         client: TailscaleClient | None = None,
         auto_poll: bool = True,
         splash: bool | None = None,
+        store: VitalsStore | None = None,
     ) -> None:
         super().__init__()
         self.client = client or TailscaleClient()
@@ -105,9 +107,11 @@ class TailtopApp(App):
         self.poller = Poller(self.client, self._on_status, self._on_error, interval=2.0)
         self.vitals: dict[str, Vitals] = {}
         self.vitals_history = VitalsHistory()
+        self.vitals_store = store if store is not None else VitalsStore()
         self.vitals_poller = VitalsPoller(self.client, self._on_vitals, self._on_error)
         self._splash_enabled = auto_poll if splash is None else splash
         self._splash: SplashScreen | None = None
+        self._history_backfilled = False
 
     def compose(self) -> ComposeResult:
         with ContentSwitcher(initial="comfort", id="modes"):
@@ -152,6 +156,15 @@ class TailtopApp(App):
         # Dismiss before triggering watch_status so the mode widgets on the
         # base screen are queryable (the splash hides them otherwise).
         self._dismiss_splash()
+        # Backfill sparkline history from SQLite on the very first status update
+        # (status isn't available at on_mount, so we seed lazily here).
+        if not self._history_backfilled:
+            self._history_backfilled = True
+            for p in status.all_nodes():
+                temps = self.vitals_store.recent_temps(p.host_name)
+                cpus = self.vitals_store.recent_cpu(p.host_name)
+                if temps or cpus:
+                    self.vitals_history.seed(p.id, temps, cpus)
         self.status = status  # triggers watch_status
 
     def _dismiss_splash(self) -> None:
@@ -168,6 +181,7 @@ class TailtopApp(App):
         for host, v in vitals.items():
             pid = pid_for(self.status, host)
             remapped[pid] = v
+            self.vitals_store.record(v.host, time.monotonic(), v)
             self.vitals_history.update(pid, v.soc_temp_c, v.cpu_pct)
         self.vitals = remapped
         if self.status is not None:
@@ -391,6 +405,7 @@ class TailtopApp(App):
         await self.poller.stop()
         await self.latency.stop()
         await self.vitals_poller.stop()
+        self.vitals_store.close()
 
 
 def main(argv: list[str] | None = None) -> None:

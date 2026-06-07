@@ -99,6 +99,19 @@ class VitalsHistory:
         if cpu_pct is not None:
             self._cpu.setdefault(peer_id, deque(maxlen=self.WIDTH)).append(float(cpu_pct))
 
+    def seed(self, peer_id: str, temps: list[float], cpus: list[float]) -> None:
+        """Bulk-append historical samples (oldest→newest) from a persistent store.
+
+        Respects WIDTH — only the most-recent WIDTH entries are retained per
+        series.  Empty lists are accepted and produce no change.
+        """
+        if temps:
+            dq = self._temp.setdefault(peer_id, deque(maxlen=self.WIDTH))
+            dq.extend(float(t) for t in temps)
+        if cpus:
+            dq = self._cpu.setdefault(peer_id, deque(maxlen=self.WIDTH))
+            dq.extend(float(c) for c in cpus)
+
     def temp_series(self, peer_id: str) -> list[float]:
         return list(self._temp.get(peer_id, ()))
 
