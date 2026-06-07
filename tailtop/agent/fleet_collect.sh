@@ -64,14 +64,29 @@ for b in /sys/class/power_supply/*/capacity; do
 done
 
 # App health, by hostname class (lowercase for case-insensitive matching).
+# Match -> APP_RUNNING=true; no match -> APP_RUNNING=null (unknown, not false).
+# Rationale: a pattern miss must never produce a false-critical; accurate
+# app-down detection is a later refinement.
 APP_NAME=""; APP_RUNNING=null; APP_LAST=""
 HOST_LC=$(printf '%s' "$HOST" | tr '[:upper:]' '[:lower:]')
 case "$HOST_LC" in
-  *clock*) APP_NAME="superclock"; pgrep -f superclock >/dev/null 2>&1 && APP_RUNNING=true || APP_RUNNING=false ;;
-  *eink*|*ink*) APP_NAME="epaper"; pgrep -f 'eink\|epaper\|render' >/dev/null 2>&1 && APP_RUNNING=true || APP_RUNNING=false
+  *clock*)
+    APP_NAME="superclock"
+    # Real process: "node --import tsx server.ts" or "clock.py/.js/.sh" etc.
+    pgrep -fi 'clock|server\.ts|tsx' >/dev/null 2>&1 && APP_RUNNING=true || APP_RUNNING=null
+    ;;
+  *eink*|*ink*)
+    APP_NAME="epaper"
+    # Real process: eink, epaper, e-paper, render, display scripts
+    pgrep -fi 'eink|epaper|e-paper|render|display' >/dev/null 2>&1 && APP_RUNNING=true || APP_RUNNING=null
     f=$(ls -t "$HOME"/*.png "$HOME"/last_frame* 2>/dev/null | head -1)
-    [ -n "$f" ] && APP_LAST=$(date -u -r "$f" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "") ;;
-  *dashboard*|*plant*|*orangepi*) APP_NAME="dashboard"; pgrep -f 'server.py' >/dev/null 2>&1 && APP_RUNNING=true || APP_RUNNING=false ;;
+    [ -n "$f" ] && APP_LAST=$(date -u -r "$f" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
+    ;;
+  *dashboard*|*plant*|*orangepi*)
+    APP_NAME="dashboard"
+    # Real process: chromium --kiosk, server.py, dashboard, kiosk scripts
+    pgrep -fi 'chromium|dashboard|kiosk|server\.py' >/dev/null 2>&1 && APP_RUNNING=true || APP_RUNNING=null
+    ;;
 esac
 
 cat <<EOF
