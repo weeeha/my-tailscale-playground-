@@ -82,3 +82,25 @@ def human_rate(bytes_per_sec: float) -> str:
             return f"{v:.0f} {u}/s" if u == "B" else f"{v:.1f} {u}/s"
         v /= 1024
     return f"{v:.1f} GB/s"
+
+
+class VitalsHistory:
+    """Per-peer rolling temperature/CPU gauges for sparklines (append-only)."""
+
+    WIDTH = 32
+
+    def __init__(self) -> None:
+        self._temp: dict[str, deque[float]] = {}
+        self._cpu: dict[str, deque[float]] = {}
+
+    def update(self, peer_id: str, temp_c: float | None, cpu_pct: float | None) -> None:
+        if temp_c is not None:
+            self._temp.setdefault(peer_id, deque(maxlen=self.WIDTH)).append(float(temp_c))
+        if cpu_pct is not None:
+            self._cpu.setdefault(peer_id, deque(maxlen=self.WIDTH)).append(float(cpu_pct))
+
+    def temp_series(self, peer_id: str) -> list[float]:
+        return list(self._temp.get(peer_id, ()))
+
+    def cpu_series(self, peer_id: str) -> list[float]:
+        return list(self._cpu.get(peer_id, ()))

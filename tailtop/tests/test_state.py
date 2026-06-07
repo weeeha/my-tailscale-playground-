@@ -37,3 +37,21 @@ def test_human_rate() -> None:
     assert human_rate(512) == "512 B/s"
     assert human_rate(1536) == "1.5 KB/s"
     assert human_rate(5 * 1024 * 1024) == "5.0 MB/s"
+
+
+def test_vitals_history_tracks_temp_and_cpu() -> None:
+    from tailtop.state import VitalsHistory
+    h = VitalsHistory()
+    h.update("p1", temp_c=40.0, cpu_pct=5.0)
+    h.update("p1", temp_c=42.0, cpu_pct=7.0)
+    assert h.temp_series("p1") == [40.0, 42.0]
+    assert h.cpu_series("p1") == [5.0, 7.0]
+    assert h.temp_series("absent") == []
+
+
+def test_vitals_history_skips_none_temp() -> None:
+    from tailtop.state import VitalsHistory
+    h = VitalsHistory()
+    h.update("p1", temp_c=None, cpu_pct=3.0)
+    assert h.temp_series("p1") == []
+    assert h.cpu_series("p1") == [3.0]
