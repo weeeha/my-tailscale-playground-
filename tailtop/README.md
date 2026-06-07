@@ -48,6 +48,25 @@ for the full picture.
 Mutating actions (exit node, funnel, send) confirm first. SSH suspends the
 TUI, hands the terminal to `tailscale ssh`, and resumes on exit.
 
+## Fleet vitals
+
+`tailtop fleet` prints a one-shot table of hardware vitals for every Pi in your
+tailnet and exits with code 0 (all healthy) or 1 (at least one host critical):
+
+```sh
+uv run tailtop fleet
+```
+
+Telemetry is collected by piping a small POSIX-sh script (`agent/fleet_collect.sh`)
+over `tailscale ssh`. The Pis themselves need nothing pre-installed — the script
+is streamed at collection time, runs read-only, and produces one JSON object of
+temp, CPU, memory, disk, throttle flags, display connectors, and app-health.
+
+The interactive TUI also polls vitals in the background every ~30 s:
+device cards show a temperature/health badge, the DeviceDetail panel adds
+Vitals and Hardware sections, and the alert strip surfaces overheating,
+throttling, and app-down events.
+
 ## Requirements
 
 - The `tailscale` CLI on your `PATH` (the daemon must be running).

@@ -1,17 +1,30 @@
 """The only CLI-aware code in tailtop.
 
-``TailscaleClient`` shells out to the ``tailscale`` binary, applies timeouts,
-normalizes failures into typed exceptions, and returns parsed models. Every
-read and every action funnels through here.
+``TailscaleClient`` shells out to the ``tailscale`` binary for status, netcheck,
+ping, and whois calls. ``collect_vitals`` is the exception: it uses OpenSSH
+(key-based, ``~/.ssh/id_ed25519``) via ``ssh -i ... <user>@<host> 'sh -s'``
+because ``tailscale ssh`` requires an interactive browser re-auth on this machine;
+the ``tailscale`` daemon still provides reachability. Every call applies timeouts
+and normalizes failures into typed exceptions.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
+from pathlib import Path
 
 from tailtop.data.models import Status
+from tailtop.data.vitals import Vitals
+
+_AGENT_SCRIPT = Path(__file__).parents[2] / "agent" / "fleet_collect.sh"
+
+
+def ssh_user_for(host: str, user_map: dict[str, str], default: str = "") -> str:
+    """Resolve the SSH login user for a Pi host (explicit map wins)."""
+    return user_map.get(host, default)
 
 
 class TailscaleError(Exception):
@@ -94,3 +107,42 @@ class TailscaleClient:
     async def ping_once(self, host: str) -> str:
         """One ping; stdout carries 'via DERP(region)' or 'direct ... in Nms'."""
         return await self.run("ping", "--c", "1", "--timeout", "3s", host, timeout=6.0, check=False)
+
+    async def _ssh_collect(self, dest: str, user: str) -> str:
+        """Run the collect script on `dest` over SSH (key-based), return stdout."""
+        dest = f"{user}@{dest}" if user else dest
+        key = os.path.expanduser("~/.ssh/id_ed25519")
+        script = _AGENT_SCRIPT.read_bytes()
+        proc = await asyncio.create_subprocess_exec(
+            "ssh", "-i", key, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "ConnectTimeout=8", dest, "sh", "-s",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(script), timeout=12.0)
+        except asyncio.TimeoutError as exc:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            raise TailscaleTimeout(f"collect {dest}") from exc
+        if proc.returncode != 0:
+            raise TailscaleError(["ssh", dest], proc.returncode or -1, err.decode("utf-8", "replace"))
+        return out.decode("utf-8", "replace")
+
+    async def collect_vitals(
+        self,
+        host: str,
+        user_map: dict[str, str],
+        addr_map: dict[str, str] | None = None,
+    ) -> Vitals | None:
+        """Collect + parse vitals for one Pi host. Returns None on failure.
+
+        ``addr_map`` maps hostname → Tailscale IP (or any reachable address).
+        When provided, the resolved address is used as the SSH target so the
+        call works off-LAN; the hostname is used only for user-map lookup.
+        """
+        user = ssh_user_for(host, user_map)
+        dest = (addr_map or {}).get(host, host)  # prefer Tailscale IP, fall back to hostname
+        raw = await self._ssh_collect(dest, user)
+        return Vitals.from_collect_json(json.loads(raw))

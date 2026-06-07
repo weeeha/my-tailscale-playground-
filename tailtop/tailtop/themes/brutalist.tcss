@@ -47,3 +47,10 @@ ObservatoryMode {
     border: heavy #2a2435;
     margin: 1 2 0 2;
 }
+
+/* brutalist belt — hard contrast */
+
+ObservatoryMode BeltView,
+TheBaseMode BeltView {
+    background: #000000;
+}

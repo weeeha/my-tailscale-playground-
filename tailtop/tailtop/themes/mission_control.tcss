@@ -43,3 +43,10 @@ CockpitMode {
     color: #6b6f78;
     border-top: solid #2a2410;
 }
+
+/* mission control belt — high-saturation, operator-now */
+
+CockpitMode BeltView,
+TheBaseMode BeltView {
+    background: #0a0e1a;
+}

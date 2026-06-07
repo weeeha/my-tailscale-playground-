@@ -7,6 +7,7 @@ from rich.text import Text
 from textual.widgets import Static
 
 from tailtop.data.models import ConnType, Peer
+from tailtop.data.vitals import Vitals
 from tailtop.state import RateHistory, human_rate, sparkline
 from tailtop.themes import theme_for_mode
 from tailtop.widgets.error_burn import ErrorBurn
@@ -22,6 +23,25 @@ _CONN_COLOR = {
     ConnType.OFFLINE: "#6b6f78",
 }
 
+_HEALTH_COLOR = {"ok": "#7be39b", "warn": "#f0c674", "crit": "#ff7878"}
+
+
+def vitals_badge(v: Vitals | None) -> Text:
+    """One-line temp/cpu/mem/disk badge, colored by health. Empty when no vitals."""
+    if v is None:
+        return Text("")
+    color = _HEALTH_COLOR[v.health_level]
+    t = Text()
+    if v.soc_temp_c is not None:
+        t.append(f"{v.soc_temp_c:.0f}°C", style=color)
+        t.append("  ", style="dim")
+    if v.throttled_now or v.under_voltage_now:
+        t.append("⚡throttled  ", style="#ff7878")
+    t.append(f"cpu {v.cpu_pct:.0f}%  ", style="dim")
+    t.append(f"mem {v.mem_pct:.0f}%  ", style="dim")
+    t.append(f"disk {v.disk_used_pct:.0f}%", style=color)
+    return t
+
 
 class DeviceCard(Static):
     """One peer, rendered as a bordered tile. Updated in place each poll."""
@@ -32,7 +52,7 @@ class DeviceCard(Static):
         self._was_online: bool | None = None
         self._burn: ErrorBurn | None = None
 
-    def update_card(self, peer: Peer, rates: RateHistory) -> None:
+    def update_card(self, peer: Peer, rates: RateHistory, vitals: Vitals | None = None) -> None:
         # Detect online → offline transition (first call has _was_online=None,
         # which doesn't fire the burn — only real transitions do).
         if (
@@ -71,7 +91,11 @@ class DeviceCard(Static):
         tx.append(sparkline(rates.tx_series(peer.id), width=spark_w), style="#7be39b")
         tx.append(tx_label, style="dim")
 
-        self.update(Group(status_line, path_line, Text(""), rx, tx))
+        rows = [status_line, path_line, Text(""), rx, tx]
+        if vitals is not None:
+            rows.append(Text(""))
+            rows.append(vitals_badge(vitals))
+        self.update(Group(*rows))
 
     def _fire_burn(self, message: str) -> None:
         """Mount a brief ErrorBurn overlay over the card."""
