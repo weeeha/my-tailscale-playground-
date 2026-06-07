@@ -41,4 +41,7 @@ async def test_app_populates_vitals() -> None:
                 break
         assert fastclock_pid in app.vitals
         assert app.vitals[fastclock_pid].soc_temp_c == 55.0
-        assert app.vitals_history.temp_series(fastclock_pid) == [55.0]
+        # auto_poll may fire the vitals poller more than once before we observe
+        # it; every round records 55.0, so assert the value, not an exact length.
+        series = app.vitals_history.temp_series(fastclock_pid)
+        assert series and all(t == 55.0 for t in series)
