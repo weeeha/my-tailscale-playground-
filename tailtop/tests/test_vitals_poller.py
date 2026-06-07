@@ -12,7 +12,7 @@ class FakeClient:
         self.behaviour = behaviour
         self.calls: list[str] = []
 
-    async def collect_vitals(self, host, user_map):  # noqa: ANN001
+    async def collect_vitals(self, host, user_map, addr_map=None):  # noqa: ANN001
         self.calls.append(host)
         b = self.behaviour.get(host)
         if isinstance(b, Exception):

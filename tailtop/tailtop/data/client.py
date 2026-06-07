@@ -108,9 +108,9 @@ class TailscaleClient:
         """One ping; stdout carries 'via DERP(region)' or 'direct ... in Nms'."""
         return await self.run("ping", "--c", "1", "--timeout", "3s", host, timeout=6.0, check=False)
 
-    async def _ssh_collect(self, host: str, user: str) -> str:
-        """Run the collect script on `host` over SSH (key-based), return stdout."""
-        dest = f"{user}@{host}" if user else host
+    async def _ssh_collect(self, dest: str, user: str) -> str:
+        """Run the collect script on `dest` over SSH (key-based), return stdout."""
+        dest = f"{user}@{dest}" if user else dest
         key = os.path.expanduser("~/.ssh/id_ed25519")
         script = _AGENT_SCRIPT.read_bytes()
         proc = await asyncio.create_subprocess_exec(
@@ -125,13 +125,24 @@ class TailscaleClient:
                 proc.kill()
             except ProcessLookupError:
                 pass
-            raise TailscaleTimeout(f"collect {host}") from exc
+            raise TailscaleTimeout(f"collect {dest}") from exc
         if proc.returncode != 0:
             raise TailscaleError(["ssh", dest], proc.returncode or -1, err.decode("utf-8", "replace"))
         return out.decode("utf-8", "replace")
 
-    async def collect_vitals(self, host: str, user_map: dict[str, str]) -> Vitals | None:
-        """Collect + parse vitals for one Pi host. Returns None on failure."""
+    async def collect_vitals(
+        self,
+        host: str,
+        user_map: dict[str, str],
+        addr_map: dict[str, str] | None = None,
+    ) -> Vitals | None:
+        """Collect + parse vitals for one Pi host. Returns None on failure.
+
+        ``addr_map`` maps hostname → Tailscale IP (or any reachable address).
+        When provided, the resolved address is used as the SSH target so the
+        call works off-LAN; the hostname is used only for user-map lookup.
+        """
         user = ssh_user_for(host, user_map)
-        raw = await self._ssh_collect(host, user)
+        dest = (addr_map or {}).get(host, host)  # prefer Tailscale IP, fall back to hostname
+        raw = await self._ssh_collect(dest, user)
         return Vitals.from_collect_json(json.loads(raw))

@@ -28,7 +28,8 @@ async def test_collect_vitals_parses_piped_output(monkeypatch) -> None:
     raw = (FIX / "vitals_fastclock.json").read_text()
     client = TailscaleClient()
 
-    async def fake_ssh(self, host, user):  # noqa: ANN001
+    async def fake_ssh(self, dest, user):  # noqa: ANN001
+        assert dest == "fastclock"  # no addr_map → hostname passes through unchanged
         assert user == "nickv2026"
         return raw
 
@@ -40,3 +41,21 @@ async def test_collect_vitals_parses_piped_output(monkeypatch) -> None:
     # the fixture is ground truth.
     assert v.host == "SuperClockFast"
     assert v.vcgencmd_present is True
+
+
+async def test_collect_vitals_uses_addr_map_ip(monkeypatch) -> None:
+    """When an addr_map is supplied, _ssh_collect is called with the Tailscale IP."""
+    raw = (FIX / "vitals_fastclock.json").read_text()
+    client = TailscaleClient()
+    captured: list[str] = []
+
+    async def fake_ssh(self, dest, user):  # noqa: ANN001
+        captured.append(dest)
+        return raw
+
+    monkeypatch.setattr(TailscaleClient, "_ssh_collect", fake_ssh, raising=True)
+    v = await client.collect_vitals(
+        "fastclock", user_map=USER_MAP, addr_map={"fastclock": "100.78.29.28"}
+    )
+    assert v is not None
+    assert captured == ["100.78.29.28"]

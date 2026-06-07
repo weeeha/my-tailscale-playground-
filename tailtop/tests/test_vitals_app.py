@@ -20,7 +20,7 @@ class FakeClient:
     async def status(self) -> Status:
         return self._status
 
-    async def collect_vitals(self, host, user_map):  # noqa: ANN001
+    async def collect_vitals(self, host, user_map, addr_map=None):  # noqa: ANN001
         return Vitals(host=host, soc_temp_c=55.0, cpu_pct=9.0)
 
 

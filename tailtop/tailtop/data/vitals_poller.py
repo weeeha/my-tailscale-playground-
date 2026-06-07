@@ -49,11 +49,12 @@ class VitalsPoller:
         self._sem = asyncio.Semaphore(concurrency)
         self._task: asyncio.Task | None = None
         self._wake = asyncio.Event()
+        self.addr_map: dict[str, str] = {}  # hostname → Tailscale IP, refreshed by the app
 
     async def _collect_one(self, host: str) -> tuple[str, Vitals | None]:
         async with self._sem:
             try:
-                return host, await self._client.collect_vitals(host, self._user_map)
+                return host, await self._client.collect_vitals(host, self._user_map, self.addr_map)
             except Exception:  # noqa: BLE001 — one host's failure is not fatal
                 return host, None
 
