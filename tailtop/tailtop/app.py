@@ -40,11 +40,22 @@ from tailtop.modes.comfort import ComfortMode
 from tailtop.modes.observatory import ObservatoryMode
 from tailtop.modes.the_base import TheBaseMode
 from tailtop.screens import ConfirmScreen, InputScreen, ResultScreen
-from tailtop.state import RateHistory
+from tailtop.data.vitals import Vitals
+from tailtop.data.vitals_poller import VitalsPoller
+from tailtop.state import RateHistory, VitalsHistory
 from tailtop.widgets.splash import SplashScreen
 from tailtop.widgets.status_bar import StatusBar
 
 _THEMES = Path(__file__).parent / "themes"
+
+
+def pid_for(status: "Status | None", host: str) -> str:
+    """Best-effort peer id for a Pi hostname (falls back to the host)."""
+    if status is not None:
+        for p in status.all_nodes():
+            if p.host_name == host:
+                return p.id
+    return host
 
 
 class TailtopApp(App):
@@ -92,6 +103,9 @@ class TailtopApp(App):
         self.latency = LatencyProbe(self.client)
         self.auto_poll = auto_poll
         self.poller = Poller(self.client, self._on_status, self._on_error, interval=2.0)
+        self.vitals: dict[str, Vitals] = {}
+        self.vitals_history = VitalsHistory()
+        self.vitals_poller = VitalsPoller(self.client, self._on_vitals, self._on_error)
         self._splash_enabled = auto_poll if splash is None else splash
         self._splash: SplashScreen | None = None
 
@@ -120,6 +134,7 @@ class TailtopApp(App):
             )
         if self.auto_poll:
             self.poller.start()
+            self.vitals_poller.start()
 
     # ---- data plumbing -----------------------------------------------------
 
@@ -139,6 +154,18 @@ class TailtopApp(App):
             return
         self._splash = None
         splash.safe_dismiss()
+
+    def _on_vitals(self, vitals: dict[str, Vitals]) -> None:
+        # The poller keys by hostname; the UI looks up by peer id. Remap here so
+        # cards/detail/alert (which use peer.id) find their vitals.
+        remapped: dict[str, Vitals] = {}
+        for host, v in vitals.items():
+            pid = pid_for(self.status, host)
+            remapped[pid] = v
+            self.vitals_history.update(pid, v.soc_temp_c, v.cpu_pct)
+        self.vitals = remapped
+        if self.status is not None:
+            self._mode_widget().update_data(self.status, self.rates)
 
     def _on_error(self, exc: Exception) -> None:
         self.error = self._friendly_error(exc)
@@ -357,6 +384,7 @@ class TailtopApp(App):
     async def on_unmount(self) -> None:
         await self.poller.stop()
         await self.latency.stop()
+        await self.vitals_poller.stop()
 
 
 def main(argv: list[str] | None = None) -> None:
