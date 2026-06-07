@@ -143,11 +143,12 @@ class TailtopApp(App):
         for p in (status.self_peer, *status.peers):
             self.rates.update(p.id, p.rx_bytes, p.tx_bytes, now)
         self.error = ""
-        # Keep the vitals poller's address map fresh so SSH targets the
-        # Tailscale IP (reachable off-LAN) rather than the bare hostname.
-        self.vitals_poller.addr_map = {
-            p.host_name: p.ipv4 for p in (status.self_peer, *status.peers) if p.ipv4
-        }
+        # NOTE: vitals SSH targets the bare hostname (→ ssh-config/.local on the
+        # LAN, which reaches the Pi's native sshd). We deliberately do NOT target
+        # the Tailscale IP: those nodes run Tailscale SSH, which intercepts port
+        # 22 on the 100.x address and demands its own (browser/check) auth, so a
+        # key-based OpenSSH there just hangs. Off-LAN collection needs the
+        # `tailscale ssh` transport once the tailnet ACL allows it without check.
         # Dismiss before triggering watch_status so the mode widgets on the
         # base screen are queryable (the splash hides them otherwise).
         self._dismiss_splash()
