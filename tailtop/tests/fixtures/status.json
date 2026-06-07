@@ -24,8 +24,8 @@
       "fd7a:115c:a1e0::a23a:d538/128"
     ],
     "Addrs": [
-      "70.83.57.153:54635",
-      "70.83.57.153:1569",
+      "203.0.113.10:54635",
+      "203.0.113.10:1569",
       "192.168.4.40:41641",
       "192.168.100.1:41641"
     ],
@@ -47,7 +47,25 @@
     "InNetworkMap": true,
     "InMagicSock": false,
     "InEngine": false,
-    "KeyExpiry": "2026-08-26T18:04:30Z"
+    "KeyExpiry": "2026-08-26T18:04:30Z",
+    "PeerAPIURL": [
+      "http://100.75.213.56:45815",
+      "http://[fd7a:115c:a1e0::a23a:d538]:45200"
+    ],
+    "CapMap": {
+      "https://tailscale.com/cap/is-admin": [
+        true
+      ],
+      "node:tsAutoUpdate": [
+        true
+      ],
+      "node:tsReleaseTrack": [
+        "stable"
+      ],
+      "node:tsStateEncrypted": [
+        true
+      ]
+    }
   },
   "Health": [],
   "MagicDNSSuffix": "tail01c8fc.ts.net",

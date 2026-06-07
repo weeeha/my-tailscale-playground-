@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from tailtop.data.latency import LatencyProbe
 from tailtop.data.models import Peer, Status
 from tailtop.modes.the_base import TheBaseMode
 from tailtop.state import RateHistory
@@ -53,6 +54,12 @@ async def test_update_data_populates_belt_and_alert_strip(status_with_peers: Sta
     from textual.app import App
 
     class _Harness(App):
+        def __init__(self) -> None:
+            super().__init__()
+            self.rates = RateHistory()
+            self.latency = LatencyProbe(None)
+            self.netcheck_self = None
+
         def compose(self):
             yield TheBaseMode(id="tb")
 
@@ -72,6 +79,12 @@ async def test_default_selection_is_first_online_peer(status_with_peers: Status)
     from textual.app import App
 
     class _Harness(App):
+        def __init__(self) -> None:
+            super().__init__()
+            self.rates = RateHistory()
+            self.latency = LatencyProbe(None)
+            self.netcheck_self = None
+
         def compose(self):
             yield TheBaseMode(id="tb")
 

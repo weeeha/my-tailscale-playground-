@@ -29,6 +29,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["tailtop"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"agent/fleet_collect.sh" = "tailtop/agent/fleet_collect.sh"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

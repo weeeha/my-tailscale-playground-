@@ -31,18 +31,31 @@ from tailtop.data.client import (
     TailscaleNotFound,
     TailscaleTimeout,
 )
+from tailtop.data.latency import LatencyProbe
 from tailtop.data.models import Peer, Status
+from tailtop.data.netcheck import NetCheck, parse_netcheck
 from tailtop.data.poller import Poller
 from tailtop.modes.cockpit import CockpitMode
 from tailtop.modes.comfort import ComfortMode
 from tailtop.modes.observatory import ObservatoryMode
 from tailtop.modes.the_base import TheBaseMode
 from tailtop.screens import ConfirmScreen, InputScreen, ResultScreen
-from tailtop.state import RateHistory
+from tailtop.data.vitals import Vitals
+from tailtop.data.vitals_poller import VitalsPoller
+from tailtop.state import RateHistory, VitalsHistory
 from tailtop.widgets.splash import SplashScreen
 from tailtop.widgets.status_bar import StatusBar
 
 _THEMES = Path(__file__).parent / "themes"
+
+
+def pid_for(status: "Status | None", host: str) -> str:
+    """Best-effort peer id for a Pi hostname (falls back to the host)."""
+    if status is not None:
+        for p in status.all_nodes():
+            if p.host_name == host:
+                return p.id
+    return host
 
 
 class TailtopApp(App):
@@ -76,6 +89,8 @@ class TailtopApp(App):
     error: reactive[str] = reactive("")
     selected_peer_id: reactive[str] = reactive("")
 
+    netcheck_self: reactive[NetCheck | None] = reactive(None)
+
     def __init__(
         self,
         client: TailscaleClient | None = None,
@@ -85,8 +100,12 @@ class TailtopApp(App):
         super().__init__()
         self.client = client or TailscaleClient()
         self.rates = RateHistory()
+        self.latency = LatencyProbe(self.client)
         self.auto_poll = auto_poll
         self.poller = Poller(self.client, self._on_status, self._on_error, interval=2.0)
+        self.vitals: dict[str, Vitals] = {}
+        self.vitals_history = VitalsHistory()
+        self.vitals_poller = VitalsPoller(self.client, self._on_vitals, self._on_error)
         self._splash_enabled = auto_poll if splash is None else splash
         self._splash: SplashScreen | None = None
 
@@ -115,6 +134,7 @@ class TailtopApp(App):
             )
         if self.auto_poll:
             self.poller.start()
+            self.vitals_poller.start()
 
     # ---- data plumbing -----------------------------------------------------
 
@@ -123,6 +143,12 @@ class TailtopApp(App):
         for p in (status.self_peer, *status.peers):
             self.rates.update(p.id, p.rx_bytes, p.tx_bytes, now)
         self.error = ""
+        # NOTE: vitals SSH targets the bare hostname (→ ssh-config/.local on the
+        # LAN, which reaches the Pi's native sshd). We deliberately do NOT target
+        # the Tailscale IP: those nodes run Tailscale SSH, which intercepts port
+        # 22 on the 100.x address and demands its own (browser/check) auth, so a
+        # key-based OpenSSH there just hangs. Off-LAN collection needs the
+        # `tailscale ssh` transport once the tailnet ACL allows it without check.
         # Dismiss before triggering watch_status so the mode widgets on the
         # base screen are queryable (the splash hides them otherwise).
         self._dismiss_splash()
@@ -134,6 +160,18 @@ class TailtopApp(App):
             return
         self._splash = None
         splash.safe_dismiss()
+
+    def _on_vitals(self, vitals: dict[str, Vitals]) -> None:
+        # The poller keys by hostname; the UI looks up by peer id. Remap here so
+        # cards/detail/alert (which use peer.id) find their vitals.
+        remapped: dict[str, Vitals] = {}
+        for host, v in vitals.items():
+            pid = pid_for(self.status, host)
+            remapped[pid] = v
+            self.vitals_history.update(pid, v.soc_temp_c, v.cpu_pct)
+        self.vitals = remapped
+        if self.status is not None:
+            self._mode_widget().update_data(self.status, self.rates)
 
     def _on_error(self, exc: Exception) -> None:
         self.error = self._friendly_error(exc)
@@ -169,10 +207,11 @@ class TailtopApp(App):
     def selected_peer(self) -> Peer | None:
         if self.status is None:
             return None
-        for p in self.status.peers:
+        nodes = self.status.all_nodes()
+        for p in nodes:
             if p.id == self.selected_peer_id:
                 return p
-        return self.status.peers[0] if self.status.peers else None
+        return nodes[0] if nodes else None
 
     # ---- mode actions ------------------------------------------------------
 
@@ -182,9 +221,25 @@ class TailtopApp(App):
         self.query_one(ContentSwitcher).current = self.active_mode
         mode = self._mode_widget()
         self.poller.set_interval(getattr(mode, "cadence", 2.0))
+        # only ping while the detail screen (Comfort) is visible
+        if self.active_mode == "comfort":
+            self.latency.retarget(self.selected_peer())
+        else:
+            self.latency.retarget(None)
         if self.status is not None:
             mode.update_data(self.status, self.rates)
         self._refresh_status_bar()
+
+    @work
+    async def ensure_netcheck(self) -> None:
+        """Fetch netcheck once (for self-detail); cache and re-render."""
+        if self.netcheck_self is not None:
+            return
+        try:
+            out = await self.client.run("netcheck", timeout=20.0, check=False)
+            self.netcheck_self = parse_netcheck(out)
+        except Exception:  # noqa: BLE001 — self panel just stays basic
+            return
 
     def action_refresh(self) -> None:
         self.poller.refresh_now()
@@ -334,17 +389,35 @@ class TailtopApp(App):
 
     async def on_unmount(self) -> None:
         await self.poller.stop()
+        await self.latency.stop()
+        await self.vitals_poller.stop()
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="tailtop", description="htop for your tailnet")
+    parser.add_argument("command", nargs="?", choices=["fleet"], help="one-shot subcommand")
     parser.add_argument(
         "--demo",
         action="store_true",
         default=os.environ.get("TAILTOP_DEMO") in ("1", "true", "yes"),
-        help="Run against a synthetic tech-company tailnet (no tailscaled needed).",
+        help="Run against a synthetic tailnet (no tailscaled needed).",
     )
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+
+    if args.command == "fleet":
+        import asyncio
+
+        from tailtop.data.vitals_poller import VitalsPoller
+        from tailtop.fleet_report import render_fleet
+
+        async def _run() -> int:
+            poller = VitalsPoller(TailscaleClient())
+            vitals = await poller.collect_round()
+            text, code = render_fleet(vitals)
+            print(text)
+            return code
+
+        sys.exit(asyncio.run(_run()))
 
     client = None
     if args.demo:

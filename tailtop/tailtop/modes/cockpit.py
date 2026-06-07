@@ -40,7 +40,7 @@ class CockpitMode(ModeView):
                 card = DeviceCard(peer.id)
                 self._cards[peer.id] = card
                 grid.mount(card)
-            card.update_card(peer, rates)
+            card.update_card(peer, rates, getattr(self.app, "vitals", {}).get(peer.id))
         for pid in list(self._cards):
             if pid not in seen:
                 self._cards.pop(pid).remove()
