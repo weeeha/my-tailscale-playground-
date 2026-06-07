@@ -47,7 +47,7 @@ async def test_collect_vitals_tailscale_ignores_addr_map(monkeypatch) -> None:
     """With tailscale transport, addr_map is ignored — bare hostname is used."""
     raw = (FIX / "vitals_fastclock.json").read_text()
     client = TailscaleClient()
-    assert client.ssh_transport == "tailscale"  # default
+    client.ssh_transport = "tailscale"
     captured: list[str] = []
 
     async def fake_ssh(self, dest, user):  # noqa: ANN001
@@ -83,9 +83,9 @@ async def test_collect_vitals_openssh_uses_addr_map_ip(monkeypatch) -> None:
 
 
 async def test_transport_tailscale_builds_argv(monkeypatch) -> None:
-    """Default tailscale transport builds: [binary, 'ssh', 'user@host', '--', 'sh', '-s']."""
+    """tailscale transport builds: [binary, 'ssh', 'user@host', '--', 'sh', '-s']."""
     client = TailscaleClient()
-    assert client.ssh_transport == "tailscale"
+    client.ssh_transport = "tailscale"
     captured_argv: list[list[str]] = []
 
     async def fake_run_pipe(self, argv, stdin_bytes):  # noqa: ANN001
@@ -129,3 +129,9 @@ async def test_transport_openssh_builds_argv(monkeypatch) -> None:
     assert argv[2] == os.path.expanduser("~/.ssh/id_ed25519")
     # ends with the target and remote command
     assert argv[-3:] == ["nickv2026@fastclock", "sh", "-s"]
+
+
+def test_default_transport_is_openssh(monkeypatch) -> None:
+    """Default transport is openssh (works on the LAN today); tailscale is opt-in."""
+    monkeypatch.delenv("TAILTOP_SSH_TRANSPORT", raising=False)
+    assert TailscaleClient().ssh_transport == "openssh"

@@ -3,14 +3,15 @@
 ``TailscaleClient`` shells out to the ``tailscale`` binary for status, netcheck,
 ping, and whois calls. ``collect_vitals`` uses SSH to pipe the fleet_collect.sh
 agent script to a remote host. The transport is selected by ``self.ssh_transport``
-(default ``"tailscale"``; override to ``"openssh"`` via env var
-``TAILTOP_SSH_TRANSPORT=openssh``):
+(default ``"openssh"``; set env ``TAILTOP_SSH_TRANSPORT=tailscale`` to switch):
 
-- ``"tailscale"``: uses ``tailscale ssh <user>@<host> -- sh -s`` so that
-  MagicDNS resolution and Tailscale ACL auth are used — works off-LAN without
-  a ``.local`` entry and is the intended path for all Pi nodes.
-- ``"openssh"``: falls back to ``ssh -i ~/.ssh/id_ed25519 …`` (key-based) for
-  hosts reachable via normal SSH.
+- ``"openssh"`` (default): ``ssh -i ~/.ssh/id_ed25519 <user>@<host> sh -s`` —
+  key-based, reaches the Pi's native sshd (e.g. via a ``.local`` ssh-config
+  entry on the LAN). Works today for hosts with a key + reachable sshd.
+- ``"tailscale"``: ``tailscale ssh <user>@<host> -- sh -s`` — the intended
+  off-LAN path for nodes running Tailscale SSH. Requires a tailnet ACL SSH rule
+  with ``action: "accept"`` (not ``check``) so unattended polling isn't blocked
+  by an interactive browser auth prompt.
 
 Every call applies timeouts and normalizes failures into typed exceptions.
 """
@@ -58,7 +59,7 @@ class TailscaleClient:
     def __init__(self, binary: str | None = None, default_timeout: float = 10.0) -> None:
         self._binary = binary or shutil.which("tailscale") or "tailscale"
         self.default_timeout = default_timeout
-        self.ssh_transport: str = os.environ.get("TAILTOP_SSH_TRANSPORT", "tailscale")
+        self.ssh_transport: str = os.environ.get("TAILTOP_SSH_TRANSPORT", "openssh")
 
     @property
     def available(self) -> bool:
@@ -128,6 +129,7 @@ class TailscaleClient:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        cmd = argv[1:] if argv and argv[0] == self._binary else argv
         try:
             out, err = await asyncio.wait_for(proc.communicate(stdin_bytes), timeout=20.0)
         except asyncio.TimeoutError as exc:
@@ -135,9 +137,9 @@ class TailscaleClient:
                 proc.kill()
             except ProcessLookupError:
                 pass
-            raise TailscaleTimeout(f"collect {argv}") from exc
+            raise TailscaleTimeout(f"collect {' '.join(cmd)}") from exc
         if proc.returncode != 0:
-            raise TailscaleError(argv, proc.returncode or -1, err.decode("utf-8", "replace"))
+            raise TailscaleError(cmd, proc.returncode or -1, err.decode("utf-8", "replace"))
         return out.decode("utf-8", "replace")
 
     async def _ssh_collect(self, dest: str, user: str) -> str:
