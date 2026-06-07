@@ -55,8 +55,6 @@ class Vitals:
     app_name: str = ""
     app_running: bool | None = None
     app_last_render: str = ""
-    # meta — set by the poller when a refresh failed but we kept the last sample
-    stale: bool = False
 
     @classmethod
     def from_collect_json(cls, d: dict) -> "Vitals":

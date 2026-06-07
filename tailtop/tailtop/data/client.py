@@ -1,8 +1,11 @@
 """The only CLI-aware code in tailtop.
 
-``TailscaleClient`` shells out to the ``tailscale`` binary, applies timeouts,
-normalizes failures into typed exceptions, and returns parsed models. Every
-read and every action funnels through here.
+``TailscaleClient`` shells out to the ``tailscale`` binary for status, netcheck,
+ping, and whois calls. ``collect_vitals`` is the exception: it uses OpenSSH
+(key-based, ``~/.ssh/id_ed25519``) via ``ssh -i ... <user>@<host> 'sh -s'``
+because ``tailscale ssh`` requires an interactive browser re-auth on this machine;
+the ``tailscale`` daemon still provides reachability. Every call applies timeouts
+and normalizes failures into typed exceptions.
 """
 
 from __future__ import annotations

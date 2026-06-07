@@ -325,9 +325,11 @@ when it joins the tailnet and matches `tag:pi`/the allowlist.
 
 All transport prerequisites confirmed against the running tailnet:
 
-1. **Tailscale SSH** — enabled on **all 8 Pis** (admin console shows the `SSH`
-   badge on every Pi; a probe reached the remote user-lookup stage). Transport =
-   `tailscale ssh`; **no OpenSSH-key fallback needed**.
+1. **Transport** — implemented as **OpenSSH key-based** (`ssh -i ~/.ssh/id_ed25519
+   <user>@<host> 'sh -s'`) because `tailscale ssh` requires interactive browser
+   re-auth on this machine; the `tailscale` daemon still provides reachability.
+   Tailscale SSH is confirmed enabled on all 8 Pis (admin console shows the `SSH`
+   badge; a probe reached the remote user-lookup stage).
 2. **SSH user** (from `~/.ssh/config`; must be a real local account on the Pi):
    - SuperClocks (`fastclock`, `slowclock`, `smallclock`, `squareclock`) → `nickv2026`
    - Orange Pi (`nickv-orangepizero2w`) → `nickv`

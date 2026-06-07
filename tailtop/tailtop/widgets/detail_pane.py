@@ -223,9 +223,13 @@ class DeviceDetail(Vertical):
             if vitals.battery_present and vitals.battery_pct is not None
             else ("present" if vitals.battery_present else "—")
         )
-        app = "—"
-        if vitals.app_name:
-            app = f"{vitals.app_name}: " + ("running" if vitals.app_running else "DOWN")
+        if vitals.app_running is True:
+            app_state = "running"
+        elif vitals.app_running is False:
+            app_state = "DOWN"
+        else:
+            app_state = "unknown"
+        app = f"{vitals.app_name}: {app_state}" if vitals.app_name else "—"
         self._panel("#panel-hardware", "Hardware", "#8bb6ff", _kv([
             ("Model", vitals.model or "—"),
             ("Displays", displays),

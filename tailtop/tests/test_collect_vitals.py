@@ -1,10 +1,8 @@
 """collect_vitals: user resolution + parse of piped script output."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-import pytest
 
 from tailtop.data.client import TailscaleClient, ssh_user_for
 
