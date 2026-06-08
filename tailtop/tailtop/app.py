@@ -181,7 +181,7 @@ class TailtopApp(App):
         for host, v in vitals.items():
             pid = pid_for(self.status, host)
             remapped[pid] = v
-            self.vitals_store.record(v.host, time.monotonic(), v)
+            self.vitals_store.record(v.host, time.time(), v)  # wall-clock: store persists across restarts
             self.vitals_history.update(pid, v.soc_temp_c, v.cpu_pct)
         self.vitals = remapped
         if self.status is not None:

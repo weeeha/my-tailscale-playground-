@@ -86,7 +86,7 @@ def update_markdown_file(
     """
     path = Path(path)
     end = _end_marker(marker)
-    text = path.read_text()
+    text = path.read_text() if path.exists() else ""
 
     block = f"{marker}\n{table}\n{end}"
 

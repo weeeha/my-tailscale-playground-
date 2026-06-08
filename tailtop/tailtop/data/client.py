@@ -173,7 +173,8 @@ class TailscaleClient:
         user_map: dict[str, str],
         addr_map: dict[str, str] | None = None,
     ) -> Vitals | None:
-        """Collect + parse vitals for one Pi host. Returns None on failure.
+        """Collect + parse vitals for one Pi host (raises on SSH/transport failure;
+        VitalsPoller turns that into a dropped host).
 
         For the ``tailscale`` transport, MagicDNS resolves the bare host name
         so ``dest = host`` (addr_map is ignored).  For the ``openssh`` transport,
