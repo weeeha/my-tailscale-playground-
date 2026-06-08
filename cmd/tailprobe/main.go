@@ -54,6 +54,9 @@ func resolveBindAddr(explicit string) (string, error) {
 // returning the bound listener. At boot, binding the 100.x fails until
 // tailscaled assigns it.
 func listenWithRetry(addr string, attempts int, sleep func(), listen func(string) (net.Listener, error)) (net.Listener, error) {
+	if attempts < 1 {
+		attempts = 1
+	}
 	var last error
 	for i := 0; i < attempts; i++ {
 		ln, err := listen(addr)

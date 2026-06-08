@@ -36,7 +36,7 @@ func newMux(collect func() (Vitals, error)) http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		WritePrometheus(w, v)
 	})
 

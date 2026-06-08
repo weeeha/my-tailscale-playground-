@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,5 +43,16 @@ func TestServerRoutes(t *testing.T) {
 	mux.ServeHTTP(r, httptest.NewRequest("GET", "/metrics", nil))
 	if r.Code != 200 || !strings.Contains(r.Body.String(), "tailprobe_soc_temp_celsius") {
 		t.Errorf("metrics: %d %q", r.Code, r.Body.String())
+	}
+}
+
+func TestServerCollectError(t *testing.T) {
+	mux := newMux(func() (Vitals, error) { return Vitals{}, errors.New("boom") })
+	for _, path := range []string{"/vitals", "/metrics"} {
+		r := httptest.NewRecorder()
+		mux.ServeHTTP(r, httptest.NewRequest("GET", path, nil))
+		if r.Code != 500 {
+			t.Errorf("%s: got %d want 500", path, r.Code)
+		}
 	}
 }
