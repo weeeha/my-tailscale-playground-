@@ -34,8 +34,8 @@ func TestReadDisplays(t *testing.T) {
 
 func TestUSBCountAndBattery(t *testing.T) {
 	fsys := fstest.MapFS{
-		"sys/bus/usb/devices/1-1/idVendor":           {Data: []byte("1234\n")},
-		"sys/bus/usb/devices/usb1/idVendor":          {Data: []byte("1d6b\n")},
+		"sys/bus/usb/devices/1-1/idVendor":            {Data: []byte("1234\n")},
+		"sys/bus/usb/devices/usb1/idVendor":           {Data: []byte("1d6b\n")},
 		"sys/bus/usb/devices/1-0:1.0/bInterfaceClass": {Data: []byte("09\n")}, // not counted (no idVendor)
 	}
 	if n := usbCount(fsys); n != 2 {
