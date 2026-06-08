@@ -19,13 +19,13 @@ CREATE TABLE IF NOT EXISTS device (
     snapshot_json TEXT NOT NULL,
     PRIMARY KEY (host, ts)
 );
-CREATE INDEX IF NOT EXISTS ix_device_host_ts ON device(host, ts);
 
 CREATE TABLE IF NOT EXISTS metric (
     host  TEXT NOT NULL,
     ts    REAL NOT NULL,
     key   TEXT NOT NULL,
-    value REAL NOT NULL
+    value REAL NOT NULL,
+    UNIQUE (host, ts, key)
 );
 CREATE INDEX IF NOT EXISTS ix_metric_host_key_ts ON metric(host, key, ts);
 
@@ -54,7 +54,9 @@ CREATE TABLE IF NOT EXISTS metric_hourly (
 class Store:
     def __init__(self, path: str = "tailhub.db") -> None:
         self.path = path
-        self.db = sqlite3.connect(path)
+        # check_same_thread=False: FastAPI serves sync handlers from a threadpool, so
+        # the connection is read off the creating thread. WAL + a single writer keeps this safe.
+        self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         # WAL: safe concurrent reads (API) during writes (scheduler).
         self.db.execute("PRAGMA journal_mode=WAL")
@@ -79,7 +81,7 @@ class Store:
 
     def add_metrics(self, host: str, ts: float, metrics: dict[str, float]) -> None:
         self.db.executemany(
-            "INSERT INTO metric(host, ts, key, value) VALUES (?,?,?,?)",
+            "INSERT OR IGNORE INTO metric(host, ts, key, value) VALUES (?,?,?,?)",
             [(host, ts, k, float(v)) for k, v in metrics.items()],
         )
 
@@ -118,6 +120,7 @@ class Store:
 
     def metric_history(self, host: str, key: str, since: float,
                        until: float | None = None) -> list[list]:
+        """Return [[ts, value], ...] for ts in (since, until] — since-exclusive, until-inclusive."""
         until = until if until is not None else since + 86400.0
         cur = self.db.execute(
             "SELECT ts, value FROM metric WHERE host=? AND key=? AND ts > ? AND ts <= ? "

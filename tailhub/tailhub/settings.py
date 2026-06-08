@@ -13,7 +13,7 @@ DEFAULT_PROBE_HOSTS = [
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="TAILHUB_", env_file=None)
+    model_config = SettingsConfigDict(env_prefix="TAILHUB_", env_file=None)  # env vars only; no .env
 
     db_path: str = "tailhub.db"
     scrape_interval_s: float = 30.0

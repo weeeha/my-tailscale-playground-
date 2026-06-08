@@ -42,12 +42,12 @@ def vitals_to_metrics(vitals: dict) -> dict[str, float]:
     health = vitals.get("health", {})
     for k in _HEALTH_KEYS:
         v = health.get(k)
-        if isinstance(v, (int, float)):
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
             out[k] = float(v)
     temp = vitals.get("thermal", {}).get("soc_temp_c")
-    if isinstance(temp, (int, float)):
+    if isinstance(temp, (int, float)) and not isinstance(temp, bool):
         out["soc_temp_c"] = float(temp)
     usb = vitals.get("side_things", {}).get("usb_count")
-    if isinstance(usb, (int, float)):
+    if isinstance(usb, (int, float)) and not isinstance(usb, bool):
         out["usb_count"] = float(usb)
     return out
