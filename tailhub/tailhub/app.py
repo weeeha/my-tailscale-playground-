@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 
+from .dashboard import DASHBOARD_HTML
 from .settings import Settings
 from .store import Store
 
@@ -12,6 +14,10 @@ def create_app(store: Store, settings: Settings) -> FastAPI:
     app = FastAPI(title="tailhub", version="0.1.0")
     app.state.store = store
     app.state.settings = settings
+
+    @app.get("/", response_class=HTMLResponse)
+    def dashboard() -> str:
+        return DASHBOARD_HTML
 
     @app.get("/healthz")
     def healthz() -> dict:

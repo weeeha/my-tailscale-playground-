@@ -40,3 +40,14 @@ def test_fleet_and_device_and_history(tmp_path):
     # stubs present
     assert c.get("/alerts").json() == {"active": [], "recent": []}
     assert c.get("/presence").json() == {"devices": []}
+
+
+def test_dashboard_served(tmp_path):
+    c = TestClient(create_app(_seed(tmp_path), Settings()))
+    r = c.get("/")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    body = r.text
+    assert "<!DOCTYPE html>" in body
+    assert "tailfleet" in body
+    assert "/fleet" in body          # the page polls the live API
