@@ -54,7 +54,7 @@ async def scrape_cycle(store: Store, devices: list[Device], scrape: ScrapeFn,
             store.add_device(dev.host, now, online=True, has_probe=True,
                              snapshot=build_snapshot(vitals))
             store.add_metrics(dev.host, now, vitals_to_metrics(vitals))
-            record(dev.host, True, "scrape_failed")
+            record(dev.host, True, "")
 
     # agentless devices: online/offline only, from tailscale status
     for dev in devices:

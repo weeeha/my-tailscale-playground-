@@ -10,6 +10,8 @@ from .store import Store
 
 def create_app(store: Store, settings: Settings) -> FastAPI:
     app = FastAPI(title="tailhub", version="0.1.0")
+    app.state.store = store
+    app.state.settings = settings
 
     @app.get("/healthz")
     def healthz() -> dict:
