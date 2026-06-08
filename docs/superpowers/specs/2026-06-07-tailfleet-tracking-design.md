@@ -109,8 +109,12 @@ recorded online/offline from the tailscale status itself.
   where the readings allow; vitals need only read access to `/proc`, `/sys`, and
   `vcgencmd` (Broadcom only).
 - **Binding/security:** HTTP listener binds the device's **Tailscale address
-  only** (never `0.0.0.0`). Tailscale ACLs restrict `/metrics` + `/vitals` to the
-  hub's IP. An optional shared bearer token adds defense-in-depth.
+  only** (never `0.0.0.0`). The probe discovers its own `100.x` from the running
+  `tailscaled` via `tailscale.com/client/local` (`Client.Status().TailscaleIPs`)
+  — not `tsnet` (too heavy: a second node), not interface-name guessing — and
+  retries with backoff at boot until an IP exists. Tailscale ACLs restrict
+  `/metrics` + `/vitals` to the hub's IP/tag; an optional shared bearer token (and
+  an optional `WhoIs` caller check) add defense-in-depth.
 - **Endpoints:**
   - `GET /metrics` — Prometheus exposition format (numeric series only). The
     Prometheus-compatible surface.
@@ -213,7 +217,7 @@ implementation spec is **Phase 0**.
 
 | Phase | Deliverable | Outcome |
 |---|---|---|
-| **0 Skeleton** | `tailprobe` (vitals collector only) + `/metrics` + `/vitals`; `tailhub` scheduler → SQLite → `/fleet`; one-command installer that pushes the binary + service unit over `tailscale ssh` to the Linux Pis; repoint `tailtop fleet` to read the hub | Always-on vitals **with history**, replacing the on-demand pull |
+| **0 Skeleton** | `tailprobe` (vitals collector only) + `/metrics` + `/vitals`; `tailhub` scheduler → SQLite → `/fleet`; one-command installer that pushes the binary + service unit over **key-based OpenSSH** (tailtop's proven transport — see §12) to the 8 arm64 Linux SBCs; repoint `tailtop fleet` to read the hub | Always-on vitals **with history**, replacing the on-demand pull |
 | **1 Alerting** | rules engine + de-dupe/hysteresis + Telegram | overheating / app-down / offline pages you |
 | **2 Network + usage** | two more collectors + `tailtop` history sparklines from stored data | richer fleet telemetry |
 | **3 Presence** | presence collector + hub `/presence` + lifelog ingestion + agent-API endpoints | feeds the life-tracker & automations |
@@ -234,9 +238,12 @@ implementation spec is **Phase 0**.
 
 ## 11. Open questions & risks
 
-- **Probe self-update.** How do probes get upgraded across the fleet? (Re-run the
-  installer over `tailscale ssh`; or a hub-driven "push new binary" step. Defer to
-  Phase 0 implementation.)
+- **Probe self-update.** *Resolved:* upgrades are an **operator-run idempotent
+  installer** — install to a versioned path (`/usr/local/bin/tailprobe-<ver>`),
+  atomically swap a `tailprobe` symlink, `systemctl restart` (instant rollback by
+  re-pointing). A hub-driven "push new binary" step is **rejected**: it would
+  reintroduce a control plane and violate the §3 no-C2 invariant. The hub only
+  pulls.
 - **Clock skew.** Devices timestamp their own samples; the hub also stamps
   receipt. Decide which is authoritative for the timeline (lean hub-receipt for
   ordering, keep device `collected_at` for accuracy).
@@ -245,11 +252,85 @@ implementation spec is **Phase 0**.
   `Collector` interface must not assume Linux.
 - **SQLite write volume.** ~20 devices × 30 s × many metrics is fine, but confirm
   rollup/retention keeps the DB bounded over months.
-- **ArtPC on Tailscale.** Infra notes reach ArtPC via the direct ethernet link
-  (`192.168.100.2`); confirm it is also reachable on `100.x` before relying on
-  scrape (else treat it like a LAN-only target or run the probe reachable over the
-  direct link).
+- **ArtPC on Tailscale.** *Resolved:* ArtPC is **not** on the tailnet (canonical
+  infra doc lists only the direct-ethernet `192.168.100.2`, no `100.x`). It is a
+  Phase 4 Windows target, scraped by the hub over the direct link
+  (`192.168.100.1` ↔ `192.168.100.2`), not Tailscale.
 - **Names.** `tailprobe` / `tailhub` are provisional.
+
+## 12. Phase 0 — validated specifics (from parallel spikes, 2026-06-07)
+
+Four read-only investigation agents validated this design against the codebase
+and the live fleet. Concretions and corrections that feed the Phase 0 plan:
+
+**Fleet — Phase 0 install set is 8 arm64 Linux SBCs** (one build covers all):
+
+| Host | `100.x` | Board |
+|---|---|---|
+| `fastclock` | 100.78.29.28 | Raspberry Pi (arm64) |
+| `slowclock` | 100.107.135.128 | Raspberry Pi |
+| `smallclock` | 100.99.148.91 | Raspberry Pi |
+| `squareclock` | 100.118.12.74 | Raspberry Pi |
+| `dashboard-ink-bed` | 100.90.45.73 | Pi Zero 2 W |
+| `dashboard3eink` | 100.92.15.33 | Pi Zero 2 W |
+| `plantdashboard` | 100.64.79.16 | Pi Zero 2 W |
+| `nickv-orangepizero2w` | 100.79.94.56 | Orange Pi Zero 2 W (Allwinner H616 — no `vcgencmd`) |
+
+Hub = Mac Studio `100.75.213.56`. Agentless (online/offline only): iPhone
+`100.70.107.55` + 2 iPads. All targets are arm64 → a **single** build:
+`CGO_ENABLED=0 GOOS=linux GOARCH=arm64 ./tool/go build -trimpath -ldflags='-s -w'
+./cmd/tailprobe` (build via the repo's pinned `./tool/go`; no system Go on PATH).
+
+**Probe (`cmd/tailprobe/`):** the vitals port is almost entirely pure-Go reads of
+`/proc` + `/sys` + `x/sys/unix` (`Statfs`, `Uname`); only `vcgencmd get_throttled`
+shells out (Broadcom only — Allwinner keeps the flags `false`, matching the
+script). Reuse `hostinfo/` (model/kernel/OS), `util/lineiter` (`/proc` reader),
+and `metrics`/`tsweb/varz` (Prometheus exposition writer). Bind via `client/local`
+(see §6.1). Preserve the `app.running = null` (unknown, never false-critical)
+contract. Acceptance shape = the existing `fleet_collect.sh` JSON (`schema:1`) and
+fixtures `tailtop/tests/fixtures/vitals_*.json`.
+
+**Hub (new `tailhub/` package):** reuse `lifelog/store.py` *idioms* (a sibling
+store with 4 tables, not an in-place extension), `tailscale_status_json()`, and
+`TailscaleOnlineCollector` (fleet discovery + agentless devices). Build it
+**async** (httpx + `asyncio.gather`) so a dead probe times out in parallel instead
+of stalling the cycle; wrap the `tailscale status` subprocess in `to_thread`.
+**Enable SQLite WAL** (`journal_mode=WAL`, `synchronous=NORMAL`) — lifelog's
+single non-WAL connection is unsafe for concurrent scheduler-writes + API-reads.
+Main new code = the `/vitals` → narrow-metric-rows + events normalizers; the
+retention/prune job is load-bearing and entirely new. New deps: `fastapi`,
+`uvicorn`, `httpx`, `pydantic-settings`.
+
+**tailtop repoint:** the swap is at the **collection layer only** —
+`Vitals.from_collect_json` and every UI consumer stay intact because the probe
+reproduces the exact `fleet_collect.sh` JSON. Add
+`TailscaleClient.fetch_fleet(hub_url)` + one hub GET in
+`vitals_poller.collect_round()`; keep the OpenSSH path as a fallback (§10). Hub
+URL via `TAILTOP_HUB_URL` env + a `--hub-url` flag (no config system exists
+today). **`/fleet` must emit each device's OS hostname as `host`** — the UI
+remaps vitals→peer by `host_name` (`pid_for`). Tests to update:
+`tailtop/tests/test_vitals_poller.py`, `test_vitals_app.py`.
+
+**Deploy + ACL — transport correction (important):** tailtop does **not** use
+`tailscale ssh` for collection; it uses key-based **OpenSSH**
+(`ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes`) to the **LAN hostname**,
+deliberately avoiding `100.x` (Tailscale SSH intercepts port 22 and demands
+browser auth, so OpenSSH-to-`100.x` hangs). The Phase 0 installer mirrors this:
+stream the binary over OpenSSH stdin (`cat > … && sudo install -m0755 …`), drop a
+**system** systemd unit (`DynamicUser=yes`, `SupplementaryGroups=video`,
+`After=tailscaled.service`, retry-bind), `systemctl enable --now`, then verify by
+curling the probe's `100.x` from the hub. ACL: tag-based — allow only
+`tag:tailhub` → `tag:tailprobe:9100`. An optional `ssh` ACL stanza would unlock
+`tailscale ssh`-over-`100.x` and remove the LAN dependency. The port (9100) must
+agree across probe `--port`, ACL `dst`, hub scraper, and verify-curl.
+
+**Phase 0 risks to plan around:** (1) **passwordless sudo** on each Pi is required
+at install time (root for `/usr/local/bin` + systemd + `enable`); verify it.
+(2) The three dashboard Pis' SSH user is `nickv2026`; the existing tailtop
+`USER_MAP` omits them (falls back to `""`) — the installer needs an explicit
+per-host user map. (3) **Bind-before-`tailscaled` race** — the probe must
+retry-bind, not exit, or systemd flaps it. (4) Self-update stays operator-run
+(versioned symlink), never a hub push (§3).
 
 ---
 
