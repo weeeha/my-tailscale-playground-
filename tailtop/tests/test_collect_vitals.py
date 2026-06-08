@@ -131,7 +131,7 @@ async def test_transport_openssh_builds_argv(monkeypatch) -> None:
     assert argv[-3:] == ["nickv2026@fastclock", "sh", "-s"]
 
 
-def test_default_transport_is_openssh(monkeypatch) -> None:
-    """Default transport is openssh (works on the LAN today); tailscale is opt-in."""
+def test_default_transport_is_tailscale(monkeypatch) -> None:
+    """Default transport is tailscale (collects all 8 Pis); openssh is the opt-in fallback."""
     monkeypatch.delenv("TAILTOP_SSH_TRANSPORT", raising=False)
-    assert TailscaleClient().ssh_transport == "openssh"
+    assert TailscaleClient().ssh_transport == "tailscale"

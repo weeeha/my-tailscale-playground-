@@ -3,15 +3,17 @@
 ``TailscaleClient`` shells out to the ``tailscale`` binary for status, netcheck,
 ping, and whois calls. ``collect_vitals`` uses SSH to pipe the fleet_collect.sh
 agent script to a remote host. The transport is selected by ``self.ssh_transport``
-(default ``"openssh"``; set env ``TAILTOP_SSH_TRANSPORT=tailscale`` to switch):
+(default ``"tailscale"``; set env ``TAILTOP_SSH_TRANSPORT=openssh`` to switch):
 
-- ``"openssh"`` (default): ``ssh -i ~/.ssh/id_ed25519 <user>@<host> sh -s`` —
-  key-based, reaches the Pi's native sshd (e.g. via a ``.local`` ssh-config
-  entry on the LAN). Works today for hosts with a key + reachable sshd.
-- ``"tailscale"``: ``tailscale ssh <user>@<host> -- sh -s`` — the intended
-  off-LAN path for nodes running Tailscale SSH. Requires a tailnet ACL SSH rule
-  with ``action: "accept"`` (not ``check``) so unattended polling isn't blocked
-  by an interactive browser auth prompt.
+- ``"tailscale"`` (default): ``tailscale ssh <user>@<host> -- sh -s`` — reaches
+  every Pi over the tailnet (works off-LAN; Tailscale identity handles auth, so
+  no key/password needed). Confirmed collecting all 8 Pis. Needs a tailnet ACL
+  SSH rule with ``action: "accept"`` so unattended polling isn't blocked by an
+  interactive check-mode prompt.
+- ``"openssh"``: ``ssh -i ~/.ssh/id_ed25519 <user>@<host> sh -s`` — key-based
+  fallback over a ``.local`` ssh-config entry on the LAN (only the 4 SuperClocks
+  have the key authorized; e-paper Pis use password auth, so they need the
+  tailscale transport).
 
 Every call applies timeouts and normalizes failures into typed exceptions.
 """
@@ -59,7 +61,7 @@ class TailscaleClient:
     def __init__(self, binary: str | None = None, default_timeout: float = 10.0) -> None:
         self._binary = binary or shutil.which("tailscale") or "tailscale"
         self.default_timeout = default_timeout
-        self.ssh_transport: str = os.environ.get("TAILTOP_SSH_TRANSPORT", "openssh")
+        self.ssh_transport: str = os.environ.get("TAILTOP_SSH_TRANSPORT", "tailscale")
 
     @property
     def available(self) -> bool:

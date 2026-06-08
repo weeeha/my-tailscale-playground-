@@ -22,6 +22,8 @@ PI_HOSTS = [
 USER_MAP = {
     "fastclock": "nickv2026", "slowclock": "nickv2026",
     "smallclock": "nickv2026", "squareclock": "nickv2026",
+    "dashboard-ink-bed": "nickv2026", "dashboard3eink": "nickv2026",
+    "plantdashboard": "nickv2026",
     "nickv-orangepizero2w": "nickv",
 }
 
