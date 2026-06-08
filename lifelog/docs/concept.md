@@ -22,9 +22,9 @@ differentiator over any commercial life-tracker.
 ### Two hardware limits cap everything
 1. **Antennas (MIMO):** commodity Pi/ESP32 chips have **one** antenna → no
    angle-of-arrival → **no precise localization** from a single device.
-2. **Bandwidth → range resolution:** 20 MHz ≈ 15 m, 80 MHz ≈ 3.75 m → a single
-   link can't range a person to sub-meter. You compensate with **many cheap
-   links** and by reading *change over time*, not absolute position.
+2. **Bandwidth → range resolution (`c/2B`):** 20 MHz ≈ 7.5 m, 80 MHz ≈ 1.9 m → a
+   single link still can't range a person to sub-meter. You compensate with **many
+   cheap links** and by reading *change over time*, not absolute position.
 
 ### Capability vs. reality (Pi / ESP32-class hardware)
 | Capability | Feasible? | Realistic precision |
@@ -64,6 +64,15 @@ The catch: it only works when the body is otherwise **still** (sleeping, sitting
 **labels** ("gaming", "cooking", "sleeping") come mostly from **device context**.
 "Gaming" isn't inferred from your body — it's that the **PlayStation is powered
 on**. The fleet/tailnet makes this L3 layer the superpower.
+
+**What CSI is actually for:** L3 device-context plus a $2 PIR/reed switch already
+deliver most of L1 (*which room*) and nearly all the labels. CSI's *unique*
+contribution is the one thing cheap sensors can't do — **breathing/sleep**. Treat
+WiFi-CSI as **one premium bedroom sensor**, not the foundation.
+
+**Who it's for:** WiFi sensing assumes ~1 person per zone — the honest target is a
+**single-occupant home** (or per-room-single-occupant); multi-person degrades to
+presence-only.
 
 ### What's realistically trackable
 Time per room (the spine) · sleep (in-bed + still + breathing) · bathroom
@@ -119,10 +128,15 @@ labeling, no Tailscale — so the two compose:
 | RuView bridge | adopt RuView as the edge layer | ✅ |
 | 4 Localization refine | RSSI fingerprint + reed/PIR sub-room zones | ⬜ |
 | 5 Analytics + ML | rollups, baselines, anomaly alerts, self-trained classifier | ⬜ |
+| — Validate | breathing/sleep vs. a chest-strap or pulse-ox over several nights | ⬜ |
 | — Hardware | flash RuView ESP32-S3 nodes; bedside breathing node | ⬜ |
 
-The breathing DSP recovers known rates exactly and rejects the empty bed (40/40
-seed sweep); a sleep card reports asleep/efficiency/awakenings/restlessness/avg
+> ✅ = software-complete and passing tests **against the simulator**; not yet
+> validated on real CSI hardware.
+
+The breathing DSP recovers known rates to **within ±1 bpm** and rejects the empty
+bed (a 5-rate parametrized test — not yet swept across many seeds or validated on
+real CSI); a sleep card reports asleep/efficiency/awakenings/restlessness/avg
 bpm; the rule engine labels gaming/working/cooking from device context.
 
 ---
@@ -133,4 +147,5 @@ bpm; the rule engine labels gaming/working/cooking from device context.
   reliable hearts.
 - **Multi-person:** WiFi sensing assumes ~1 person/zone; degrade gracefully.
 - **Drift/calibration:** fingerprints decay → anchor with device-truth, recalibrate.
-- **Privacy:** intimate data — keep local, consider at-rest encryption.
+- **Privacy:** intimate, **health-adjacent** data — keep it local, mind who else is
+  on the tailnet, and add at-rest encryption (a requirement, not a "maybe").

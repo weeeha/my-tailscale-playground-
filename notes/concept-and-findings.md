@@ -5,7 +5,8 @@ Orange Pis, ESP32s) into a *private, local* spatial-sensing + life-tracking
 system — "where does my time go?", answered by your own hardware, with nothing
 leaving the machine.
 
-*Status: concept validated, three runnable sub-projects built. June 2026.*
+*Status: concept validated; three sub-projects built and tested **in the fork
+branch (PR #6)** — not yet extracted to their own repos. June 2026.*
 
 ---
 
@@ -41,9 +42,9 @@ fleet, and has the longest interesting roadmap.
 ### Two hardware limits cap everything
 1. **Antennas (MIMO):** commodity Pi/ESP32 chips have **one** antenna → essentially
    no angle-of-arrival → **no precise localization** from a single device.
-2. **Bandwidth → range resolution:** 20 MHz ≈ 15 m, 80 MHz ≈ 3.75 m → a single
-   link can't range a person to sub-meter. You compensate with **many cheap
-   links** and by reading *change over time*, not absolute position.
+2. **Bandwidth → range resolution (`c/2B`):** 20 MHz ≈ 7.5 m, 80 MHz ≈ 1.9 m → a
+   single link still can't range a person to sub-meter. You compensate with **many
+   cheap links** and by reading *change over time*, not absolute position.
 
 ### Capability vs. reality (on Pi / ESP32-class hardware)
 | Capability | Feasible? | Realistic precision |
@@ -98,6 +99,16 @@ three layers:
 **labels** ("gaming", "cooking", "sleeping") come mostly from **device context**.
 "Gaming" isn't inferred from your body — it's that the **PlayStation is powered
 on** (a near-100% signal). The fleet/tailnet makes this L3 layer the superpower.
+
+**What CSI is actually for:** follow that logic and L3 device-context plus a $2
+PIR/reed switch already deliver most of L1 (*which room*) and nearly all the
+activity labels. CSI's *unique* contribution is the one thing cheap sensors can't
+do — **breathing/sleep**. So treat WiFi-CSI not as the foundation but as **one
+premium bedroom sensor**: buy it for sleep, use cheap sensors elsewhere.
+
+**Who it's for:** WiFi sensing assumes ~1 person per zone, so the honest target is
+a **single-occupant home** (or per-room-single-occupant). Multi-person households
+degrade to presence-only — design for that, don't pretend otherwise.
 
 ### What's realistically trackable
 - **Time per room** (the spine) · **sleep** (in-bed + still + breathing) ·
@@ -156,7 +167,8 @@ no Tailscale. So the two **compose perfectly**:
 ## 7. What's been built
 
 Three **separate, runnable** sub-projects, each stub-first so they run on any
-machine with no hardware:
+machine with no hardware. All three currently live in the **fork branch (PR #6)** —
+none has been extracted yet, so `weeeha/wifi-life-log` is still empty:
 
 | Project | Type | What it does | Tests |
 |---|---|---|---|
@@ -165,11 +177,12 @@ machine with no hardware:
 | **`tailsnap/`** | CLI | print-and-exit tailnet readouts: status table, health line, topology tree, traffic bars | 12 ✅ |
 | `scripts/fleet-capability-probe.sh` | tool | per-node inventory (CSI/monitor-mode, camera, serial, GPIO, Tailscale) | — |
 
-**`lifelog` highlights:** breathing DSP recovers known rates exactly and rejects
-the empty bed (40/40 seed sweep); a sleep card reports asleep/efficiency/
+**`lifelog` highlights:** breathing DSP recovers known rates to **within ±1 bpm**
+and rejects the empty bed (a 5-rate parametrized test — *not yet swept across many
+seeds or validated on real CSI*); a sleep card reports asleep/efficiency/
 awakenings/restlessness/avg-bpm; rule engine labels gaming/working/cooking from
 device context; `RuViewBridge` turns RuView MQTT vitals into our events
-(verified: RuView bedroom vitals → fusion `SLEEPING`).
+(verified on simulated input: RuView bedroom vitals → fusion `SLEEPING`).
 
 ---
 
@@ -184,6 +197,10 @@ device context; `RuViewBridge` turns RuView MQTT vitals into our events
 - Targets created: **`weeeha/wifi-life-log`** (lifelog), **`weeeha/tailtop`**.
   Extraction is history-preserving via `git subtree split`
   (`scripts/extract-subprojects.sh`).
+- **Not done yet:** the extract script currently splits only `lifelog/` and
+  `tailtop/` — it skips `tailsnap/` and this `notes/` folder, so the design docs
+  won't travel until that's fixed. Also choose a license deliberately on extract
+  (the `lifelog` package still declares tailscale's `BSD-3-Clause` by inheritance).
 
 ---
 
@@ -198,7 +215,11 @@ device context; `RuViewBridge` turns RuView MQTT vitals into our events
 | RuView bridge | adopt RuView as the edge layer | ✅ |
 | 4 Localization refine | RSSI fingerprint + reed/PIR sub-room zones | ⬜ |
 | 5 Analytics + ML | daily rollups, baselines, anomaly alerts, self-trained classifier | ⬜ |
+| — Validate | breathing/sleep vs. a chest-strap or pulse-ox over several nights | ⬜ |
 | — Hardware | flash RuView ESP32-S3 nodes; bedside breathing node | ⬜ |
+
+> ✅ = software-complete and passing tests **against the simulator**; none is yet
+> validated on real CSI hardware.
 
 ---
 
@@ -210,7 +231,8 @@ device context; `RuViewBridge` turns RuView MQTT vitals into our events
 - **Drift/calibration:** fingerprints decay → anchor with device-truth, recalibrate.
 - **`tailsnap` home:** own repo, fold into the `tailtop` repo (siblings), or keep
   in the playground — undecided.
-- **Privacy/security:** intimate data — keep local, consider at-rest encryption.
+- **Privacy/security:** intimate, **health-adjacent** data — keep it local, mind
+  who else is on the tailnet, and add at-rest encryption (a requirement, not a "maybe").
 
 ---
 
