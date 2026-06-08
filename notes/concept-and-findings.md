@@ -197,10 +197,10 @@ device context; `RuViewBridge` turns RuView MQTT vitals into our events
 - Targets created: **`weeeha/wifi-life-log`** (lifelog), **`weeeha/tailtop`**.
   Extraction is history-preserving via `git subtree split`
   (`scripts/extract-subprojects.sh`).
-- **Not done yet:** the extract script currently splits only `lifelog/` and
-  `tailtop/` — it skips `tailsnap/` and this `notes/` folder, so the design docs
-  won't travel until that's fixed. Also choose a license deliberately on extract
-  (the `lifelog` package still declares tailscale's `BSD-3-Clause` by inheritance).
+- **Status:** the extract script now splits `lifelog/`, `tailtop/`, and `tailsnap/`,
+  and lifelog's docs travel via `lifelog/docs/`. `lifelog` and `tailsnap` are now
+  licensed **MIT** (were BSD-3 by inheritance from tailscale). Still to do: create
+  the `tailsnap` repo and run the script locally to populate the target repos.
 
 ---
 

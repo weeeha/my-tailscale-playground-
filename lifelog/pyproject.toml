@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A private, local WiFi-sensing time-tracker for a Tailscale device fleet."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "BSD-3-Clause" }
+license = { text = "MIT" }
 keywords = ["tailscale", "wifi-sensing", "csi", "time-tracking", "presence"]
 dependencies = []  # core is pure stdlib
 
