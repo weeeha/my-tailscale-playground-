@@ -19,4 +19,22 @@ while IFS="$(printf '\t')" read -r host addr user; do
   case "$addr" in 100.*) : ;; *) fail "addr not 100.x: $addr";; esac
 done < fleet.tsv
 
+# 3. installer syntax is valid POSIX sh.
+sh -n install-tailprobe.sh || fail "install-tailprobe.sh has a syntax error"
+
+# 4. dry-run --all prints an install plan for all 8 hosts and touches nothing.
+out="$(sh install-tailprobe.sh --dry-run --all)"
+echo "$out" | grep -q '=== fastclock (100.78.29.28) as nickv2026 ===' || fail "dry-run missing fastclock"
+echo "$out" | grep -q '=== nickv-orangepizero2w (100.79.94.56) as nickv ===' || fail "dry-run missing orangepi"
+hosts="$(echo "$out" | grep -c '^=== ')"
+[ "$hosts" -eq 8 ] || fail "dry-run covered $hosts hosts, expected 8"
+echo "$out" | grep -q "curl http://100.64.79.16:9100/healthz" || fail "dry-run missing verify step"
+# dry-run must NOT actually invoke ssh/curl — assert no real side-effect markers.
+echo "$out" | grep -q 'verify OK' && fail "dry-run performed a real verify"
+
+# 5. shellcheck if available (optional).
+if command -v shellcheck >/dev/null 2>&1; then
+  shellcheck -s sh install-tailprobe.sh test_deploy.sh || fail "shellcheck flagged an issue"
+fi
+
 echo "test_deploy: unit+manifest OK"
