@@ -110,7 +110,7 @@ CSI/RSSI frames → amplitude per subcarrier → sliding-window variance
 **Breathing (per node, needs stillness):**
 ```
 CSI → pick stable subcarriers → phase sanitization (remove CFO/SFO drift)
-  → bandpass 0.1–0.5 Hz → 30–60 s window → FFT → peak in 0.13–0.5 Hz
+  → bandpass 0.1–0.5 Hz → 30–60 s window → FFT → peak in 0.1–0.5 Hz
   → breaths/min + peak-prominence = confidence
 ```
 The breathing peak survives because it's *periodic* — integrating over a minute
@@ -207,7 +207,7 @@ RuView nodes (ESP32 CSI → DSP/ML → MQTT)        lifelog (this repo)
 ```
 
 - **Re-use:** ESP32 firmware, breathing/presence DSP, MQTT semantic states,
-  per-room calibration (MicroLoRA), HA-discovery topic convention.
+  per-room calibration (RuView's MicroLoRA adaptation), HA-discovery topic convention.
 - **Keep ours:** device/appliance context fusion, the time-tracking timeline,
   activity labeling, sleep *analytics*, Tailscale transport, tailtop UI.
 - **This deletes the "real sensor agent" phase** — `RuViewBridge`

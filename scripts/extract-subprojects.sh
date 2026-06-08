@@ -2,7 +2,7 @@
 #
 # extract-subprojects.sh — split sub-projects out of this playground monorepo
 # into their own repos, PRESERVING each sub-directory's git history (the files
-# land at the new repo's root, not under lifelog/ or tailtop/).
+# land at the new repo's root, not under lifelog/, tailtop/, or tailsnap/).
 #
 # Why a script you run locally: the cloud session is scoped to this repo only,
 # so it cannot push to the new repos. Run this on your machine, where you have
@@ -15,13 +15,20 @@
 # first push is a non-fast-forward — re-run with PUSH_OPTS=--force to overwrite:
 #   PUSH_OPTS=--force bash scripts/extract-subprojects.sh
 #
+# tailsnap has no repo yet — create one first (its home was "undecided"; subtree
+# split moves files to the repo root, so its own repo is the clean option):
+#   gh repo create weeeha/tailsnap --private
+# The lifelog design docs travel inside lifelog/docs/, so the top-level notes/
+# folder is intentionally left behind in the playground.
+#
 # Override any default via env:
-#   LIFELOG_REMOTE=...  TAILTOP_REMOTE=...  BRANCH=main  PUSH_OPTS=...
+#   LIFELOG_REMOTE=...  TAILTOP_REMOTE=...  TAILSNAP_REMOTE=...  BRANCH=main  PUSH_OPTS=...
 
 set -euo pipefail
 
 LIFELOG_REMOTE="${LIFELOG_REMOTE:-https://github.com/weeeha/wifi-life-log.git}"
 TAILTOP_REMOTE="${TAILTOP_REMOTE:-https://github.com/weeeha/tailtop.git}"
+TAILSNAP_REMOTE="${TAILSNAP_REMOTE:-https://github.com/weeeha/tailsnap.git}"
 BRANCH="${BRANCH:-main}"
 PUSH_OPTS="${PUSH_OPTS:-}"
 
@@ -45,6 +52,7 @@ split_and_push() {
 
 split_and_push lifelog "$LIFELOG_REMOTE"
 split_and_push tailtop "$TAILTOP_REMOTE"
+split_and_push tailsnap "$TAILSNAP_REMOTE"
 
 cat <<'EOF'
 All set. Each target repo now has its sub-project at the root, with history.
