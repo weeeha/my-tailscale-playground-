@@ -31,7 +31,7 @@ async def test_app_populates_vitals() -> None:
     from tailtop.app import pid_for
     fastclock_pid = pid_for(status, "fastclock")
 
-    app = TailtopApp(client=FakeClient(status), auto_poll=True, splash=False)
+    app = TailtopApp(client=FakeClient(status), auto_poll=True, splash=False, enable_boot=False)
     # Poll only a couple of known hosts to keep the test fast/deterministic.
     app.vitals_poller._hosts = ["fastclock"]
     async with app.run_test() as pilot:

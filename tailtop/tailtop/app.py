@@ -35,6 +35,7 @@ from tailtop.data.latency import LatencyProbe
 from tailtop.data.models import Peer, Status
 from tailtop.data.netcheck import NetCheck, parse_netcheck
 from tailtop.data.poller import Poller
+from tailtop.modes.base import ModeView
 from tailtop.modes.cockpit import CockpitMode
 from tailtop.modes.comfort import ComfortMode
 from tailtop.modes.observatory import ObservatoryMode
@@ -96,6 +97,7 @@ class TailtopApp(App):
         client: TailscaleClient | None = None,
         auto_poll: bool = True,
         splash: bool | None = None,
+        enable_boot: bool | None = None,
     ) -> None:
         super().__init__()
         self.client = client or TailscaleClient()
@@ -106,8 +108,15 @@ class TailtopApp(App):
         self.vitals: dict[str, Vitals] = {}
         self.vitals_history = VitalsHistory()
         self.vitals_poller = VitalsPoller(self.client, self._on_vitals, self._on_error)
+        # Rainbow pixel splash defaults on when polling is on.
         self._splash_enabled = auto_poll if splash is None else splash
         self._splash: SplashScreen | None = None
+        # TTE beams/print boot defaults OFF when splash is enabled (avoid double-boot).
+        # Pass enable_boot=True to opt in alongside (or instead of) the pixel splash.
+        if enable_boot is None:
+            self.enable_boot = auto_poll and not self._splash_enabled
+        else:
+            self.enable_boot = enable_boot
 
     def compose(self) -> ComposeResult:
         with ContentSwitcher(initial="comfort", id="modes"):
@@ -119,6 +128,11 @@ class TailtopApp(App):
 
     def on_mount(self) -> None:
         self._refresh_status_bar()
+        # Mode-mount-beams flags must be set BEFORE pushing any boot screens,
+        # otherwise query_one("#comfort", ...) traverses the splash and fails.
+        if not self.enable_boot:
+            for mode_id in self.MODE_ORDER:
+                self.query_one(f"#{mode_id}", ModeView).mark_first_visit_done()
         if self._splash_enabled:
             self._splash = SplashScreen()
             self.push_screen(self._splash)
@@ -135,6 +149,11 @@ class TailtopApp(App):
         if self.auto_poll:
             self.poller.start()
             self.vitals_poller.start()
+        if self.enable_boot:
+            from tailtop.widgets.boot_overlay import BootOverlay
+            self.push_screen(BootOverlay())
+            # Boot handles Comfort's first-visit visual.
+            self._mode_widget().mark_first_visit_done()
 
     # ---- data plumbing -----------------------------------------------------
 
@@ -228,6 +247,9 @@ class TailtopApp(App):
             self.latency.retarget(None)
         if self.status is not None:
             mode.update_data(self.status, self.rates)
+        if not mode.first_visit_done:
+            mode.mark_first_visit_done()
+            mode.on_first_visit()
         self._refresh_status_bar()
 
     @work

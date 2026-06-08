@@ -1,0 +1,26 @@
+TTE → Textual spike results
+============================================================
+
+effect: decrypt
+  frames: 570
+  playback wall-clock: 9.52s
+  effective fps: 59.9
+  avg interval: 16.67ms
+  p95 interval: 18.73ms
+  (tte drain time: 11.27s)
+
+effect: beams
+  frames: 165
+  playback wall-clock: 2.77s
+  effective fps: 59.6
+  avg interval: 16.67ms
+  p95 interval: 17.06ms
+  (tte drain time: 3.3s)
+
+effect: print
+  frames: 30
+  playback wall-clock: 0.52s
+  effective fps: 58.0
+  avg interval: 16.67ms
+  p95 interval: 17.19ms
+  (tte drain time: 0.61s)
