@@ -410,12 +410,18 @@ class TailtopApp(App):
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="tailtop", description="htop for your tailnet")
-    parser.add_argument("command", nargs="?", choices=["fleet", "alert"], help="one-shot subcommand")
+    parser.add_argument("command", nargs="?", choices=["fleet", "alert", "inventory"], help="one-shot subcommand")
     parser.add_argument(
         "--demo",
         action="store_true",
         default=os.environ.get("TAILTOP_DEMO") in ("1", "true", "yes"),
         help="Run against a synthetic tailnet (no tailscaled needed).",
+    )
+    parser.add_argument(
+        "--write",
+        metavar="PATH",
+        default=None,
+        help="(inventory) Write/update the inventory table in this markdown file.",
     )
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -454,6 +460,24 @@ def main(argv: list[str] | None = None) -> None:
             return 0
 
         sys.exit(asyncio.run(_run_alert()))
+
+    if args.command == "inventory":
+        import asyncio
+
+        from tailtop.data.vitals_poller import VitalsPoller
+        from tailtop.inventory import render_inventory, update_markdown_file
+
+        async def _run_inventory() -> int:
+            poller = VitalsPoller(TailscaleClient())
+            vitals = await poller.collect_round()
+            table = render_inventory(vitals)
+            print(table)
+            if args.write:
+                update_markdown_file(args.write, table)
+                print(f"\nInventory written to {args.write}")
+            return 0
+
+        sys.exit(asyncio.run(_run_inventory()))
 
     client = None
     if args.demo:
