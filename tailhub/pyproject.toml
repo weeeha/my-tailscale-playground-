@@ -1,0 +1,34 @@
+[project]
+name = "tailhub"
+version = "0.1.0"
+description = "Central collector for the Tailscale fleet: scrapes tailprobe agents into a SQLite timeline and serves a JSON API."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "BSD-3-Clause" }
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "httpx>=0.27",
+    "pydantic-settings>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0,<9.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+tailhub = "tailhub.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tailhub"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
