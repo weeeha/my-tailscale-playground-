@@ -4,8 +4,10 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 func procFS(cmdlines ...string) fstest.MapFS {
@@ -16,7 +18,7 @@ func procFS(cmdlines ...string) fstest.MapFS {
 	}
 	return m
 }
-func pid(i int) string { return []string{"101", "202", "303"}[i] }
+func pid(i int) string { return fmt.Sprintf("%d", 100+i) }
 
 func TestAppHealthClassesAndMatch(t *testing.T) {
 	// clock host, a matching process running.
@@ -33,5 +35,20 @@ func TestAppHealthClassesAndMatch(t *testing.T) {
 	u := appHealth("mac-studio", procFS("anything"), "")
 	if u.Name != "" || u.Running != nil {
 		t.Fatalf("unknown class: %+v", u)
+	}
+}
+
+func TestAppHealthEpaperLastRender(t *testing.T) {
+	ts := time.Date(2026, 6, 7, 1, 2, 3, 0, time.UTC)
+	fsys := fstest.MapFS{
+		"proc/101/cmdline":       {Data: []byte("python3\x00epaper_render.py")},
+		"home/pi/last_frame.png": {Data: []byte("x"), ModTime: ts},
+	}
+	a := appHealth("bedroom-eink", fsys, "home/pi")
+	if a.Name != "epaper" || a.Running == nil || !*a.Running {
+		t.Fatalf("epaper running: %+v", a)
+	}
+	if a.LastRender != "2026-06-07T01:02:03Z" {
+		t.Errorf("last_render=%q want 2026-06-07T01:02:03Z", a.LastRender)
 	}
 }

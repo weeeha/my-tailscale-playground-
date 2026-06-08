@@ -55,6 +55,9 @@ func TestCollectProducesSchema1(t *testing.T) {
 	if v.App.Name != "dashboard" || v.App.Running == nil || !*v.App.Running {
 		t.Errorf("app: %+v", v.App)
 	}
+	if v.SideThings.USB == nil {
+		t.Error("side_things.usb must serialize as [] not null")
+	}
 	// Must round-trip as valid JSON with non-nil slices (never JSON null arrays).
 	b, _ := json.Marshal(v)
 	if !json.Valid(b) {

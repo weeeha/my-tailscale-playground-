@@ -32,8 +32,11 @@ func memPct(totalKB, availKB int64) float64 {
 	return (1 - float64(availKB)/float64(totalKB)) * 100
 }
 
-// cpuSample parses the aggregate "cpu " line of /proc/stat into total and idle
-// jiffies. idle is the 4th numeric field (idle).
+// cpuSample sums ALL fields of the aggregate "cpu " line as the busy+idle total
+// (the standard htop/vmstat method). This intentionally differs from
+// fleet_collect.sh, which summed only user+nice+system+idle; the difference is a
+// slightly lower cpu_pct during heavy iowait and is not a bug.
+// idle is the 4th numeric field (index 3).
 func cpuSample(b []byte) (total, idle int64) {
 	for _, ln := range strings.Split(string(b), "\n") {
 		if !strings.HasPrefix(ln, "cpu ") {
