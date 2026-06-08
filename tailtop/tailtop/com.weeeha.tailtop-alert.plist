@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.weeeha.tailtop-alert</string>
+
+    <!-- Edit the path below to match your local checkout before loading. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/uv</string>
+        <string>run</string>
+        <string>--directory</string>
+        <string>/Users/nickv/ClaudeCode Projects/Tailscale/tailtop</string>
+        <string>tailtop</string>
+        <string>alert</string>
+    </array>
+
+    <!-- Run every 15 minutes (900 seconds). -->
+    <key>StartInterval</key>
+    <integer>900</integer>
+
+    <!-- Fill in the secrets for the channels you want to use.
+         Leave a value empty to disable that channel. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <!-- Telegram: both TOKEN and CHAT_ID must be non-empty to enable -->
+        <key>TAILTOP_TELEGRAM_TOKEN</key>
+        <string></string>
+        <key>TAILTOP_TELEGRAM_CHAT_ID</key>
+        <string></string>
+        <!-- Slack incoming-webhook URL -->
+        <key>TAILTOP_SLACK_WEBHOOK</key>
+        <string></string>
+        <!-- ntfy topic name (uses ntfy.sh by default) -->
+        <key>TAILTOP_NTFY_TOPIC</key>
+        <string></string>
+        <!-- Optional: self-hosted ntfy server, e.g. https://ntfy.example.com -->
+        <key>TAILTOP_NTFY_SERVER</key>
+        <string></string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/nickv/Library/Logs/tailtop-alert.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/nickv/Library/Logs/tailtop-alert.err</string>
+
+    <!-- Do not fire immediately on launchctl load — only on the interval. -->
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

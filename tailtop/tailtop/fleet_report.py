@@ -1,9 +1,22 @@
 """Pure renderer for the `tailtop fleet` one-shot table."""
 from __future__ import annotations
 
-from tailtop.data.vitals import Vitals
+from tailtop.data.vitals import Vitals, summarise_health
 
 _MARK = {"ok": "·", "warn": "!", "crit": "✗"}
+
+
+def alert_message(vitals_by_id: dict[str, Vitals]) -> str | None:
+    """Return a one-line summary of only warn/crit hosts, or None when all clear.
+
+    Reuses ``Vitals.reasons`` via ``summarise_health`` so threshold logic is
+    never duplicated.  Only hosts with health_level != "ok" contribute reasons.
+    """
+    unhealthy = {k: v for k, v in vitals_by_id.items() if v.health_level != "ok"}
+    if not unhealthy:
+        return None
+    summary = summarise_health(unhealthy)
+    return summary if summary else None
 
 
 def render_fleet(vitals_by_id: dict[str, Vitals]) -> tuple[str, int]:

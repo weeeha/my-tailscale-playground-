@@ -49,6 +49,55 @@ device cards show a temperature/health badge, the DeviceDetail panel adds
 Vitals and Hardware sections, and the alert strip surfaces overheating,
 throttling, and app-down events.
 
+## Alert — out-of-band notifications
+
+`tailtop alert` collects one round of Pi vitals and sends a message to every
+configured notification channel when any host is in a `warn` or `crit` state.
+If all hosts are healthy it prints `all clear` and exits 0. No TUI is opened.
+
+```sh
+uv run tailtop alert
+```
+
+### Notification channels
+
+Channels are enabled by exporting the corresponding env vars before running
+`tailtop alert` (or filling them into the launchd plist's
+`EnvironmentVariables` dict):
+
+| Channel | Required env vars |
+|---------|-------------------|
+| **Telegram** | `TAILTOP_TELEGRAM_TOKEN` + `TAILTOP_TELEGRAM_CHAT_ID` |
+| **Slack** | `TAILTOP_SLACK_WEBHOOK` (incoming-webhook URL) |
+| **ntfy** | `TAILTOP_NTFY_TOPIC` (+ optional `TAILTOP_NTFY_SERVER`, default `https://ntfy.sh`) |
+
+A channel is silently skipped when its env var(s) are absent or empty.
+
+### Running on a schedule (launchd)
+
+A ready-made launchd agent plist is included at
+`tailtop/com.weeeha.tailtop-alert.plist`. It fires every 15 minutes
+(`StartInterval 900`).
+
+1. Copy the plist to your LaunchAgents folder and edit the paths and secrets:
+   ```sh
+   cp tailtop/com.weeeha.tailtop-alert.plist ~/Library/LaunchAgents/
+   # Edit ProgramArguments (--directory path) and EnvironmentVariables
+   # (TAILTOP_* secrets) before loading.
+   open ~/Library/LaunchAgents/com.weeeha.tailtop-alert.plist
+   ```
+
+2. Load the agent:
+   ```sh
+   launchctl load ~/Library/LaunchAgents/com.weeeha.tailtop-alert.plist
+   ```
+
+3. Logs are written to:
+   - `~/Library/Logs/tailtop-alert.log` (stdout)
+   - `~/Library/Logs/tailtop-alert.err` (stderr)
+
+To unload: `launchctl unload ~/Library/LaunchAgents/com.weeeha.tailtop-alert.plist`
+
 ## Requirements
 
 - The `tailscale` CLI on your `PATH` (the daemon must be running).

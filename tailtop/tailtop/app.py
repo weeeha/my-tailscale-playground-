@@ -410,7 +410,7 @@ class TailtopApp(App):
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="tailtop", description="htop for your tailnet")
-    parser.add_argument("command", nargs="?", choices=["fleet"], help="one-shot subcommand")
+    parser.add_argument("command", nargs="?", choices=["fleet", "alert"], help="one-shot subcommand")
     parser.add_argument(
         "--demo",
         action="store_true",
@@ -433,6 +433,27 @@ def main(argv: list[str] | None = None) -> None:
             return code
 
         sys.exit(asyncio.run(_run()))
+
+    if args.command == "alert":
+        import asyncio
+
+        from tailtop.data import notify
+        from tailtop.data.vitals_poller import VitalsPoller
+        from tailtop.fleet_report import alert_message
+
+        async def _run_alert() -> int:
+            poller = VitalsPoller(TailscaleClient())
+            vitals = await poller.collect_round()
+            msg = alert_message(vitals)
+            if msg:
+                channels = await notify.notify_all(msg, os.environ)
+                ch_str = ", ".join(channels) if channels else "no channels configured"
+                print(f"alert sent ({ch_str}): {msg}")
+            else:
+                print("all clear")
+            return 0
+
+        sys.exit(asyncio.run(_run_alert()))
 
     client = None
     if args.demo:
