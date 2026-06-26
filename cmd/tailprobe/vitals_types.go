@@ -1,8 +1,7 @@
 // Copyright (c) Tailscale Inc & contributors
 // SPDX-License-Identifier: BSD-3-Clause
 
-// Command tailprobe serves one device's vitals over a Tailscale-only HTTP
-// endpoint, reproducing the schema:1 JSON of tailtop/agent/fleet_collect.sh.
+// Package main — schema:1 vitals types.
 package main
 
 // Vitals is the schema:1 object consumed by tailtop's Vitals.from_collect_json.
@@ -76,10 +75,10 @@ type DiskStats struct {
 // Options carries the host-specific, injectable inputs to Collect so the
 // collector is fully unit-testable off-device.
 type Options struct {
-	Host        string                          // os.Hostname() in production
-	CollectedAt string                          // RFC3339; empty => time.Now().UTC()
-	Kernel      string                          // unix.Uname Release in production
-	HomeRel     string                          // home dir relative to fsys root, e.g. "home/pi"
+	Host        string // os.Hostname() in production
+	CollectedAt string // RFC3339; empty => time.Now().UTC()
+	Kernel      string // unix.Uname Release in production
+	HomeRel     string // home dir relative to fsys root, e.g. "home/pi"
 	Statfs      func(path string) (DiskStats, error)
 	Vcgencmd    func() (present, throttled, underVolt bool)
 	Sleep       func() // CPU% inter-sample sleep; nil => 200ms
