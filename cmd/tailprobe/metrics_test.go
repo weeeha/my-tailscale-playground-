@@ -43,4 +43,20 @@ func TestWritePrometheus(t *testing.T) {
 	if strings.Contains(sb.String(), "tailprobe_soc_temp_celsius") {
 		t.Errorf("nil temp must be omitted, got:\n%s", sb.String())
 	}
+
+	// app.running == false ⇒ 0
+	falseR := false
+	v.App.Running = &falseR
+	sb.Reset()
+	WritePrometheus(&sb, v)
+	if !strings.Contains(sb.String(), `tailprobe_app_running{host="plantdashboard",app="dashboard"} 0`) {
+		t.Errorf("running=false must emit 0, got:\n%s", sb.String())
+	}
+	// app.running == nil ⇒ -1 (unknown)
+	v.App.Running = nil
+	sb.Reset()
+	WritePrometheus(&sb, v)
+	if !strings.Contains(sb.String(), `tailprobe_app_running{host="plantdashboard",app="dashboard"} -1`) {
+		t.Errorf("running=nil must emit -1, got:\n%s", sb.String())
+	}
 }

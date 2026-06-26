@@ -39,3 +39,25 @@ func TestListenWithRetry(t *testing.T) {
 	}
 	_ = ln.Close()
 }
+
+func TestListenWithRetryExhausted(t *testing.T) {
+	calls := 0
+	want := errors.New("always fails")
+	ln, err := listenWithRetry("100.78.29.28:9100", 2, func() {}, func(string) (net.Listener, error) {
+		calls++
+		return nil, want
+	})
+	if ln != nil || !errors.Is(err, want) || calls != 2 {
+		t.Fatalf("calls=%d ln=%v err=%v (want 2 calls, nil listener, want-err)", calls, ln, err)
+	}
+}
+
+func TestPickTailscaleAddrIPAddr(t *testing.T) {
+	got, err := pickTailscaleAddr([]net.Addr{
+		&net.IPAddr{IP: net.ParseIP("192.168.4.40")},
+		&net.IPAddr{IP: net.ParseIP("100.96.7.111")},
+	})
+	if err != nil || got != "100.96.7.111" {
+		t.Fatalf("got %q err=%v want 100.96.7.111", got, err)
+	}
+}
