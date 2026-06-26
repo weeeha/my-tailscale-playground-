@@ -38,3 +38,18 @@ async def test_scrape_cycle_writes_and_transitions(tmp_path):
     assert "went_offline" in kinds
     assert db.recent_events("fastclock") == []
     assert new_state["fastclock"] is True and new_state["slowclock"] is False
+
+
+async def test_scrape_cycle_handles_raising_scrape(tmp_path):
+    db = Store(str(tmp_path / "e.db"))
+    devices = [Device("fastclock", "100.78.29.28", online=True, has_probe=True)]
+
+    async def boom(dev):
+        raise RuntimeError("network blew up")
+
+    new_state = await scrape_cycle(db, devices, boom, now=100.0, prev_online={"fastclock": True})
+    latest = db.latest_device("fastclock")
+    assert latest["online"] is False
+    assert db.metric_history("fastclock", "cpu_pct", since=0.0) == []
+    assert new_state["fastclock"] is False
+    assert "went_offline" in {e["kind"] for e in db.recent_events("fastclock")}

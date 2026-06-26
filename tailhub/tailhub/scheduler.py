@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 
 import httpx
 
 from .fleet import Device, discover_fleet, tailscale_status_json
-from .scrape import scrape_cycle, scrape_one
+from .scrape import scrape_cycle, scrape_one, ScrapeFn
 from .settings import Settings
 from .store import Store
 
 StatusProvider = Callable[[], dict]
-ScrapeFn = Callable[[Device], Awaitable[dict | None]]
 
 
 async def run_cycle(store: Store, settings: Settings, now: float, prev_online: dict[str, bool],
@@ -60,6 +59,7 @@ async def run_scheduler(store: Store, settings: Settings, stop: asyncio.Event,
 
 def main() -> None:
     import uvicorn
+    from contextlib import asynccontextmanager
 
     from .app import create_app
 
@@ -68,13 +68,14 @@ def main() -> None:
     app = create_app(store, settings)
     stop = asyncio.Event()
 
-    @app.on_event("startup")
-    async def _start() -> None:
-        app.state.scheduler = asyncio.create_task(run_scheduler(store, settings, stop))
+    @asynccontextmanager
+    async def lifespan(_app):
+        task = asyncio.create_task(run_scheduler(store, settings, stop))
+        try:
+            yield
+        finally:
+            stop.set()
+            await task
 
-    @app.on_event("shutdown")
-    async def _stop() -> None:
-        stop.set()
-        await app.state.scheduler
-
+    app.router.lifespan_context = lifespan
     uvicorn.run(app, host=settings.api_host, port=settings.api_port)
