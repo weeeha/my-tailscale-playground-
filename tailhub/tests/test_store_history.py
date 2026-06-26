@@ -15,6 +15,18 @@ def test_metric_history_and_events(tmp_path):
     assert evs[0]["kind"] == "went_offline" and evs[0]["detail"]["reason"] == "scrape_failed"
 
 
+def test_rollup_excludes_next_hour(tmp_path):
+    db = Store(str(tmp_path / "b.db"))
+    db.add_metrics("fastclock", 3600.0, {"cpu_pct": 10.0})
+    db.add_metrics("fastclock", 7200.0, {"cpu_pct": 99.0})   # start of the NEXT hour
+    db.commit()
+    db.rollup_hour(3600)
+    row = db.db.execute(
+        "SELECT n, max FROM metric_hourly WHERE host='fastclock' AND hour=3600 AND key='cpu_pct'"
+    ).fetchone()
+    assert row["n"] == 1 and row["max"] == 10.0     # 7200 excluded from the 3600 bucket
+
+
 def test_rollup_and_prune(tmp_path):
     db = Store(str(tmp_path / "r.db"))
     # three samples inside the hour starting at 3600
