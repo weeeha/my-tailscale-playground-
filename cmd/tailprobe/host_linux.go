@@ -6,8 +6,6 @@
 package main
 
 import (
-	"strings"
-
 	"golang.org/x/sys/unix"
 )
 
@@ -17,5 +15,5 @@ func realKernel() string {
 	if err := unix.Uname(&u); err != nil {
 		return ""
 	}
-	return strings.TrimRight(string(u.Release[:]), "\x00")
+	return unix.ByteSliceToString(u.Release[:])
 }

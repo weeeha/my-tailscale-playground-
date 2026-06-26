@@ -23,7 +23,10 @@ func realStatfs(path string) (DiskStats, error) {
 	bs := uint64(st.Bsize)
 	total := st.Blocks * bs
 	free := st.Bavail * bs
-	used := total - free
+	var used uint64
+	if total > free {
+		used = total - free
+	}
 	var usedPct float64
 	if total > 0 {
 		usedPct = float64(used) / float64(total) * 100
