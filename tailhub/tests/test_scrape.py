@@ -23,7 +23,7 @@ async def test_scrape_cycle_writes_and_transitions(tmp_path):
     async def fake_scrape(dev: Device):
         return VITALS if dev.host == "fastclock" else None
 
-    prev = {"fastclock": True}     # slowclock was not previously known
+    prev = {"fastclock": True, "slowclock": True}   # slowclock was up; now its scrape fails → transition
     new_state = await scrape_cycle(db, devices, fake_scrape, now=100.0, prev_online=prev)
 
     latest = {d["host"]: d for d in db.latest_devices()}

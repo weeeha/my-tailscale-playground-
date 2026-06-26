@@ -37,11 +37,11 @@ async def scrape_cycle(store: Store, devices: list[Device], scrape: ScrapeFn,
 
     new_state: dict[str, bool] = {}
 
-    def record(host: str, online: bool) -> None:
+    def record(host: str, online: bool, reason: str) -> None:
         was = prev_online.get(host)
-        if not online and was is not False:
-            store.add_event(host, now, "went_offline", {"reason": "scrape_failed"})
-        elif online and was is False:
+        if was is True and not online:
+            store.add_event(host, now, "went_offline", {"reason": reason})
+        elif was is False and online:
             store.add_event(host, now, "came_online", {})
         new_state[host] = online
 
@@ -49,12 +49,12 @@ async def scrape_cycle(store: Store, devices: list[Device], scrape: ScrapeFn,
         vitals = res if isinstance(res, dict) else None
         if vitals is None:
             store.add_device(dev.host, now, online=False, has_probe=True, snapshot={"host": dev.host})
-            record(dev.host, False)
+            record(dev.host, False, "scrape_failed")
         else:
             store.add_device(dev.host, now, online=True, has_probe=True,
                              snapshot=build_snapshot(vitals))
             store.add_metrics(dev.host, now, vitals_to_metrics(vitals))
-            record(dev.host, True)
+            record(dev.host, True, "scrape_failed")
 
     # agentless devices: online/offline only, from tailscale status
     for dev in devices:
@@ -62,7 +62,7 @@ async def scrape_cycle(store: Store, devices: list[Device], scrape: ScrapeFn,
             continue
         store.add_device(dev.host, now, online=dev.online, has_probe=False,
                          snapshot={"host": dev.host})
-        record(dev.host, dev.online)
+        record(dev.host, dev.online, "tailscale_offline")
 
     store.commit()
     return new_state
