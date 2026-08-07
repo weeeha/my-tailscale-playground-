@@ -1,0 +1,17 @@
+// Merge into your Tailscale policy (admin console → Access controls).
+// Restricts the tailprobe port (9100) so ONLY the hub can scrape it.
+{
+  "tagOwners": {
+    "tag:tailprobe": ["autogroup:admin"],
+    "tag:tailhub":   ["autogroup:admin"],
+  },
+  "acls": [
+    // ...your existing acls...
+    { "action": "accept", "src": ["tag:tailhub"], "dst": ["tag:tailprobe:9100"] },
+  ],
+  // Optional: lets the hub use `tailscale ssh` to the probes (removes the LAN-SSH
+  // dependency for installs). Without this, installs use key-based OpenSSH on the LAN.
+  "ssh": [
+    { "action": "accept", "src": ["tag:tailhub"], "dst": ["tag:tailprobe"], "users": ["nickv2026", "nickv"] },
+  ],
+}

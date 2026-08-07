@@ -1,0 +1,20 @@
+[Unit]
+Description=tailprobe fleet telemetry agent
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# __ADDR__ is replaced by the installer with this device's Tailscale (100.x) IP.
+ExecStart=/usr/local/bin/tailprobe --addr __ADDR__:9100
+DynamicUser=yes
+SupplementaryGroups=video
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
