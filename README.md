@@ -1,3 +1,21 @@
+# my-tailscale-playground
+
+A fork of [tailscale/tailscale](https://github.com/tailscale/tailscale) used as a monorepo for tools built around a personal tailnet. Against the point where it forked, the additions are new directories and files, plus one change to `.gitignore`; no Tailscale source file was modified or deleted.
+
+| Path | What it is |
+|---|---|
+| `tailtop/` | Terminal UI for a tailnet (Python 3.13, Textual). Modes: Comfort, Cockpit, Observatory. `tailtop fleet` prints a one-shot hardware vitals table for the Pi fleet. |
+| `tailsnap/` | CLI snapshot of the tailnet from `tailscale status --json`: `status`, `health`, `map`, `traffic`, and `--demo` with a built-in fixture. |
+| `cmd/tailprobe/` | Go agent that serves one device's vitals (`/healthz`, `/vitals`, `/metrics`) on its Tailscale address. Install scripts for systemd and OpenSSH hosts are under `deploy/`. |
+| `tailhub/` | Python collector (FastAPI, SQLite) that discovers devices from `tailscale status`, scrapes each `tailprobe`, and serves `/fleet`, `/device/{host}` and `/history`. |
+| `lifelog/` | WiFi-sensing time-tracker that runs end to end on simulated data. |
+| `docs/superpowers/` | Design specs and implementation plans for the tools above. |
+| `notes/`, `scripts/` | Research notes, a fleet capability probe, and `extract-subprojects.sh` for splitting `lifelog/` and `tailtop/` into their own repos. |
+
+Each tool has its own README with build and run steps. The rest of this file is the upstream Tailscale README, unchanged.
+
+---
+
 # Tailscale
 
 https://tailscale.com
